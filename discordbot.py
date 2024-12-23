@@ -1,6 +1,6 @@
+import asyncio
 import os
 import discord
-from datetime import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -33,27 +33,29 @@ class DiscordBot:
 
     class TimeTracker(commands.Cog):
 
-        def __init__(self, bot):
+        def __init__(self, bot: commands.Bot):
             self.bot = bot
-            self.voice_times = {}
+            self.connected_user = set()
+            self.bg_task = self.bot.loop.create_task(self.update_time())
+
+        async def update_time(self):
+            """Background task that runs every minute to update the time spent in voice chat for each user.
+            """
+            await self.bot.wait_until_ready()
+            while not self.bot.is_closed():
+                if self.connected_user:
+                    print('Users connected: {0}'.format(self.connected_user))
+                await asyncio.sleep(60)
 
         @commands.Cog.listener()
         async def on_voice_state_update(self, member, before, after):
-            """on_voice_state_update event handler that tracks the time spent in voice chat for each user.
-            It triggers when a user joins or leaves a voice channel and writes the time spent to the db."""
-            user_id = member.id
-
+            """on_voice_state_update event handler that tracks each connected user.
+            It triggers when a user joins or leaves a voice channel."""
             if before.channel is None and after.channel is not None:
-                self.voice_times[user_id] = datetime.now()
+                self.connected_user.add(member.id)
 
             elif before.channel is not None and after.channel is None:
-                if user_id in self.voice_times:
-                    join_time = self.voice_times[user_id]
-                    leave_time = datetime.now()
-                    time_spent = round((leave_time - join_time).total_seconds() / 60)
-                    print('User {0} spent {1} minutes in voice chat'.format(user_id, time_spent))
-                    # Remove user from tracking
-                    del self.voice_times[user_id]
+                self.connected_user.remove(member.id)
 
 if __name__ == "__main__":
     bot = DiscordBot()
