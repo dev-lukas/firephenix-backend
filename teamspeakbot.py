@@ -1,6 +1,6 @@
 import threading
 import ts3
-from datetime import datetime, time
+from datetime import time
 import os
 from dotenv import load_dotenv
 
@@ -12,6 +12,7 @@ class TeamspeakBot:
         self.username = os.getenv('TS3_USERNAME')
         self.password = os.getenv('TS3_PASSWORD')
         self.server_id = int(os.getenv('TS3_SERVER_ID', '1'))
+        self.excluded_role_id = os.getenv('TS3_EXCLUDED_ROLE_ID')
         
         self.connected_users = set()
 
@@ -38,7 +39,8 @@ class TeamspeakBot:
                 clients = ts3conn.exec_("clientlist")
                 for client in clients:
                     if client.get("client_type") == "0":  # Regular clients only
-                        self.connected_users.add(client["clid"])
+                        if self.excluded_role_id not in event[0].get("client_servergroups", "").split(","):
+                            self.connected_users.add(client["clid"])
                 
                 print("Bot is running and tracking users...")
                 
@@ -48,11 +50,13 @@ class TeamspeakBot:
                     
                     if event[0]["reasonid"] == "0":  # Client connected
                         if event[0].get("client_type") == "0":
-                            self.connected_users.add(event[0]["clid"])
+                            if self.excluded_role_id not in event[0].get("client_servergroups", "").split(","):
+                                self.connected_users.add(event[0]["clid"])
                             
                     elif event[0]["reasonid"] == "8":  # Client disconnected
                         if event[0].get("client_type") == "0":
-                            self.connected_users.remove(event[0]["clid"])
+                            if self.excluded_role_id not in event[0].get("client_servergroups", "").split(","):
+                                self.connected_users.remove(event[0]["clid"])
                             
         except ts3.query.TS3QueryError as err:
             print(f"TS3 Query Error: {err}")

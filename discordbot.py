@@ -34,6 +34,8 @@ class DiscordBot:
     class TimeTracker(commands.Cog):
 
         def __init__(self, bot: commands.Bot):
+            load_dotenv()
+            self.excluded_role_id = os.getenv("DISCORD_EXCLUDED_ROLE_ID")
             self.bot = bot
             self.connected_user = set()
             self.bg_task = self.bot.loop.create_task(self.update_time())
@@ -52,10 +54,12 @@ class DiscordBot:
             """on_voice_state_update event handler that tracks each connected user.
             It triggers when a user joins or leaves a voice channel."""
             if before.channel is None and after.channel is not None:
-                self.connected_user.add(member.id)
+                if not discord.utils.get(member.roles, name=self.excluded_role_id):
+                    self.connected_user.add(member.id)
 
             elif before.channel is not None and after.channel is None:
-                self.connected_user.remove(member.id)
+                if not discord.utils.get(member.roles, name=self.excluded_role_id):
+                    self.connected_user.remove(member.id)
 
 if __name__ == "__main__":
     bot = DiscordBot()
