@@ -3,13 +3,17 @@ import os
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from database import DatabaseManager
+from logger import RankingLogger
+
+logging = RankingLogger(__name__).get_logger()
 
 
 class DiscordBot:
     def __init__(self):
         load_dotenv()
         self.token = os.getenv("DISCORD_TOKEN")
-
+        
         self.intents = discord.Intents.default()
         self.intents.voice_states = True
         self.intents.message_content = True
@@ -29,25 +33,46 @@ class DiscordBot:
         try:
             self.bot.run(self.token)
         except Exception as e:
-            print(f"Error: {e}")
+            logging.error(f"Error running the bot: {e}")
 
     class TimeTracker(commands.Cog):
 
         def __init__(self, bot: commands.Bot):
             load_dotenv()
             self.excluded_role_id = os.getenv("DISCORD_EXCLUDED_ROLE_ID")
+
+            self.database = DatabaseManager(
+                host=os.getenv("DB_HOST"),
+                user=os.getenv("DB_USER"),
+                password=os.getenv("DB_PASSWORD"),
+                database=os.getenv("DB_NAME")
+            )
             self.bot = bot
-            self.connected_user = set()
+            self.connected_users = set()
+            self.bg_task = self.bot.loop.create_task(self.scan_voice_channels())
             self.bg_task = self.bot.loop.create_task(self.update_time())
+            logging.info("Discord Bot started successfully.")
 
         async def update_time(self):
             """Background task that runs every minute to update the time spent in voice chat for each user.
             """
             await self.bot.wait_until_ready()
             while not self.bot.is_closed():
-                if self.connected_user:
-                    print('Users connected: {0}'.format(self.connected_user))
+                if self.connected_users:
+                    self.database.update_times(self.connected_users, "discord")
                 await asyncio.sleep(60)
+
+        async def scan_voice_channels(self):
+            """Scan all voice channels and add connected users to the set"""
+            await self.bot.wait_until_ready()
+            
+            for guild in self.bot.guilds:
+                for voice_channel in guild.voice_channels:
+                    for member in voice_channel.members:
+                        if not member.bot:  # Ignore bots
+                            self.connected_users.add(member.id)
+            
+            logging.info(f"Initial voice channel scan complete. Found {len(self.connected_users)} users.")
 
         @commands.Cog.listener()
         async def on_voice_state_update(self, member, before, after):
@@ -55,11 +80,11 @@ class DiscordBot:
             It triggers when a user joins or leaves a voice channel."""
             if before.channel is None and after.channel is not None:
                 if not discord.utils.get(member.roles, name=self.excluded_role_id):
-                    self.connected_user.add(member.id)
+                    self.connected_users.add(member.id)
 
             elif before.channel is not None and after.channel is None:
                 if not discord.utils.get(member.roles, name=self.excluded_role_id):
-                    self.connected_user.remove(member.id)
+                    self.connected_users.remove(member.id)
 
 if __name__ == "__main__":
     bot = DiscordBot()

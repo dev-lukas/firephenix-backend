@@ -3,6 +3,11 @@ import ts3
 from datetime import time
 import os
 from dotenv import load_dotenv
+from database import DatabaseManager
+from logger import RankingLogger
+
+logging = RankingLogger(__name__).get_logger()
+
 
 class TeamspeakBot:
     def __init__(self):
@@ -14,14 +19,21 @@ class TeamspeakBot:
         self.server_id = int(os.getenv('TS3_SERVER_ID', '1'))
         self.excluded_role_id = os.getenv('TS3_EXCLUDED_ROLE_ID')
         
+        self.database = DatabaseManager(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME")
+        )
+
         self.connected_users = set()
 
     def update_time(self):
         """Background thread to update minutes every 60 seconds"""
+        logging.info("Teamspeak Time Thread started successfully.")
         while self.running:
             if self.connected_users:
-                # self.update_database(self.connected_users)
-                print("Users connected: {0}".format(self.connected_users))
+                self.database.update_times(self.connected_users, "teamspeak")
             time.sleep(60)
 
     def run(self):
@@ -42,7 +54,7 @@ class TeamspeakBot:
                         if self.excluded_role_id not in event[0].get("client_servergroups", "").split(","):
                             self.connected_users.add(client["clid"])
                 
-                print("Bot is running and tracking users...")
+                logging.info("Teamspeak-Bot is running and tracking users...")
                 
                 # Event loop
                 while True:
@@ -59,9 +71,9 @@ class TeamspeakBot:
                                 self.connected_users.remove(event[0]["clid"])
                             
         except ts3.query.TS3QueryError as err:
-            print(f"TS3 Query Error: {err}")
+            logging.error(f"TS3 Query Error: {err}")
         except Exception as e:
-            print(f"Error: {e}")
+            logging.error(f"Error: {e}")
 
 def main():
     bot = TeamspeakBot()
