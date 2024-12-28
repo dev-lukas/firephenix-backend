@@ -1,5 +1,5 @@
 import sys
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple, Union
 import mariadb
 from logger import RankingLogger
 
@@ -31,7 +31,7 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS user_time (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     discord_uid BIGINT UNIQUE,
-                    teamspeak_uid INT UNIQUE,
+                    teamspeak_uid VARCHAR(128) UNIQUE,
                     total_time INT DEFAULT 0,
                     daily_time INT DEFAULT 0,
                     weekly_time INT DEFAULT 0,
@@ -47,7 +47,7 @@ class DatabaseManager:
             self.conn.rollback()
             raise
 
-    def update_times(self, users: Set[int], platform: str, minutes: int = 1) -> None:
+    def update_times(self, users: Set[Union[int, str]], platform: str, minutes: int = 1) -> None:
         """Batch update time values for multiple users"""
         try:
             # Convert set to list
@@ -80,7 +80,7 @@ class DatabaseManager:
             self.conn.rollback()
             raise
 
-    def get_user_times(self, user_id: int, platform: str) -> Optional[Tuple[int, int, int, int]]:
+    def get_user_times(self, user_id: Union[int, str], platform: str) -> Optional[Tuple[int, int, int, int]]:
         """Get time values for a specific user"""
         try:
             id_column = "discord_uid" if platform == "discord" else "teamspeak_uid"
@@ -94,7 +94,7 @@ class DatabaseManager:
             logging.error(f"Error getting user times: {e}")
             raise
 
-    def get_top_users(self, timeframe: str, platform: str, limit: int = 10) -> List[Tuple[int, int]]:
+    def get_top_users(self, timeframe: str, platform: str, limit: int = 10) -> List[Tuple[Union[int, str], int]]:
         """Get top users for a specific timeframe and platform"""
         try:
             time_column = f"{timeframe}_time"

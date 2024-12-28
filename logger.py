@@ -11,6 +11,9 @@ class RankingLogger:
         self.file_handler = logging.FileHandler('log/rankingsystem.log')
         self.file_handler.setFormatter(self.formatter)
         self.logger.addHandler(self.file_handler)
+        self.console_handler = logging.StreamHandler()
+        self.console_handler.setFormatter(self.formatter)
+        self.logger.addHandler(self.console_handler)
     
     def get_logger(self):
         return self.logger

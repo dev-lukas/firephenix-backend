@@ -1,5 +1,5 @@
 python-dotenv
 discord.py
-ts3
+ts3>=2.0.0b2
 mariadb
 flask
