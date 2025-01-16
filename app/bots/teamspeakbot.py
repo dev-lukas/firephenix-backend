@@ -46,7 +46,7 @@ class TeamspeakBot:
                     user_count=len(self.connected_users),
                     platform='teamspeak'
                 )
-    time.sleep(60)
+            time.sleep(60)
 
     def get_client_uid(self, client_id, ts3conn):
         """Get unique identifier for a client"""

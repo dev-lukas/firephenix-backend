@@ -10,8 +10,8 @@ def get_usage_stats():
     logging = RankingLogger(__name__).get_logger()
 
     try:
-        period = request.args.get('period', 'daily')  # 'daily' or 'weekly'
-        hours = 24 if period == 'daily' else 24 * 7
+        period = request.args.get('period', 'daily')
+        hours = 24 * 7 if period == 'weekly' else 24
         db = DatabaseManager()
         
         query = """
