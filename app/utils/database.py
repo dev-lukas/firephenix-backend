@@ -1,7 +1,7 @@
 import sys
 from typing import List, Optional, Set, Tuple, Union
 import mariadb
-from logger import RankingLogger
+from app.utils.logger import RankingLogger
 
 logging = RankingLogger(__name__).get_logger()
 

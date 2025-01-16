@@ -2,17 +2,16 @@ import asyncio
 import os
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv
-from database import DatabaseManager
-from logger import RankingLogger
+from app.utils.database import DatabaseManager
+from app.utils.logger import RankingLogger
+from app.config import Config
 
 logging = RankingLogger(__name__).get_logger()
 
 
 class DiscordBot:
     def __init__(self):
-        load_dotenv()
-        self.token = os.getenv("DISCORD_TOKEN")
+        self.token = Config.DISCORD_TOKEN
         
         self.intents = discord.Intents.default()
         self.intents.voice_states = True
@@ -38,8 +37,7 @@ class DiscordBot:
     class TimeTracker(commands.Cog):
 
         def __init__(self, bot: commands.Bot):
-            load_dotenv()
-            self.excluded_role_id = os.getenv("DISCORD_EXCLUDED_ROLE_ID")
+            self.excluded_role_id = Config.DISCORD_EXCLUDED_ROLE_ID
 
             self.database = DatabaseManager(
                 host=os.getenv("DB_HOST"),
@@ -71,7 +69,7 @@ class DiscordBot:
                     for member in voice_channel.members:
                         if not member.bot:  # Ignore bots
                             self.connected_users.add(member.id)
-            
+              
             logging.info(f"Initial voice channel scan complete. Found {len(self.connected_users)} users.")
 
         @commands.Cog.listener()
@@ -85,7 +83,3 @@ class DiscordBot:
             elif before.channel is not None and after.channel is None:
                 if not discord.utils.get(member.roles, name=self.excluded_role_id):
                     self.connected_users.remove(member.id)
-
-if __name__ == "__main__":
-    bot = DiscordBot()
-    bot.run()

@@ -2,22 +2,21 @@ import threading
 import ts3
 import time
 import os
-from dotenv import load_dotenv
-from database import DatabaseManager
-from logger import RankingLogger
+from app.utils.database import DatabaseManager
+from app.utils.logger import RankingLogger
+from app.config import Config
 
 logging = RankingLogger(__name__).get_logger()
 
 
 class TeamspeakBot:
     def __init__(self):
-        load_dotenv()
-        self.host = os.getenv('TS3_HOST')
-        self.port = int(os.getenv('TS3_PORT', '10011'))
-        self.username = os.getenv('TS3_USERNAME')
-        self.password = os.getenv('TS3_PASSWORD')
-        self.server_id = int(os.getenv('TS3_SERVER_ID', '1'))
-        self.excluded_role_id = os.getenv('TS3_EXCLUDED_ROLE_ID')
+        self.host = Config.TS3_HOST
+        self.port = int(Config.TS3_PORT)
+        self.username = Config.TS3_USERNAME
+        self.password = Config.TS3_PASSWORD
+        self.server_id = int(Config.TS3_SERVER_ID)
+        self.excluded_role_id = Config.TS3_EXCLUDED_ROLE_ID
         
         self.database = DatabaseManager(
             host=os.getenv("DB_HOST"),
@@ -93,7 +92,3 @@ class TeamspeakBot:
             logging.error(f"TS3 Query Error: {err}")
         except Exception as e:
             logging.error(f"Error: {e}")
-
-if __name__ == "__main__":
-    bot = TeamspeakBot()
-    bot.run()
