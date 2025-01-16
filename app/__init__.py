@@ -7,6 +7,7 @@ from app.utils.logger import RankingLogger
 from app.api.ranking.routes import ranking_bp
 from app.api.ranking.stats.routes import ranking_stats_bp
 from app.api.ranking.usage.routes import ranking_usage_bp
+from app.api.ranking.top.routes import ranking_top_bp
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -31,6 +32,7 @@ def create_app():
     app.register_blueprint(ranking_bp)
     app.register_blueprint(ranking_stats_bp)
     app.register_blueprint(ranking_usage_bp)
+    app.register_blueprint(ranking_top_bp)
 
     logging.info("Flask App started successfully. System ready.")
 

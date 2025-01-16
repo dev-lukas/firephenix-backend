@@ -67,13 +67,13 @@ class DiscordBot:
             """
             await self.bot.wait_until_ready()
             while not self.bot.is_closed():
-                if self.connected_users:
-                    self.database.update_times(self.connected_users, "discord")
                 if datetime.now().minute == 0:
                     self.database.log_usage_stats(
                         user_count=len(self.connected_users),
                         platform='discord'
                     )
+                if self.connected_users:
+                    self.database.update_times(self.connected_users, "discord")
                 await asyncio.sleep(60)
 
         async def scan_voice_channels(self):
@@ -85,6 +85,7 @@ class DiscordBot:
                     for member in voice_channel.members:
                         if not member.bot:  # Ignore bots
                             self.connected_users.add(member.id)
+                            self.database.update_user_name(member.id, member.display_name, "discord")
               
             logging.info(f"Initial voice channel scan complete. Found {len(self.connected_users)} users.")
 
@@ -95,6 +96,7 @@ class DiscordBot:
             if before.channel is None and after.channel is not None:
                 if not discord.utils.get(member.roles, name=self.excluded_role_id):
                     self.connected_users.add(member.id)
+                    self.database.update_user_name(member.id, member.display_name, "discord")
 
             elif before.channel is not None and after.channel is None:
                 if not discord.utils.get(member.roles, name=self.excluded_role_id):

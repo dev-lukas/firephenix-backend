@@ -5,7 +5,7 @@ from app.utils.logger import RankingLogger
 ranking_usage_bp = Blueprint('ranking_usage', __name__)
 
 @ranking_usage_bp.route('/api/ranking/usage', methods=['GET'])
-def get_usage_stats():
+def get_usage():
 
     logging = RankingLogger(__name__).get_logger()
 

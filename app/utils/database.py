@@ -32,6 +32,9 @@ class DatabaseManager:
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     discord_uid BIGINT UNIQUE,
                     teamspeak_uid VARCHAR(128) UNIQUE,
+                    name VARCHAR(255),
+                    level INT DEFAULT 0,
+                    division INT DEFAULT 0,
                     total_time INT DEFAULT 0,
                     daily_time INT DEFAULT 0,
                     weekly_time INT DEFAULT 0,
@@ -43,12 +46,12 @@ class DatabaseManager:
             """)
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS usage_stats (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                timestamp DATETIME NOT NULL,
-                user_count INT NOT NULL,
-                platform ENUM('discord', 'teamspeak') NOT NULL,
-                INDEX idx_timestamp (timestamp),
-                INDEX idx_platform (platform)
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    timestamp DATETIME NOT NULL,
+                    user_count INT NOT NULL,
+                    platform ENUM('discord', 'teamspeak') NOT NULL,
+                    INDEX idx_timestamp (timestamp),
+                    INDEX idx_platform (platform)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
             self.conn.commit()
@@ -112,6 +115,25 @@ class DatabaseManager:
             self.conn.rollback()
             raise
     
+    def update_user_name(self, user_id: str, name: str, platform: str):
+        """
+        Insert user if not exists, update name if changed
+        platform should be either 'discord' or 'teamspeak'
+        """
+        query = """
+        INSERT INTO user_time 
+            (discord_uid, teamspeak_uid, name) 
+        VALUES 
+            (?, ?, ?)
+        ON DUPLICATE KEY UPDATE 
+            name = VALUES(name)
+        """
+
+        discord_uid = user_id if platform == 'discord' else None
+        teamspeak_uid = user_id if platform == 'teamspeak' else None
+    
+        self.execute_query(query, (discord_uid, teamspeak_uid, name))
+
     def log_usage_stats(self, user_count: int, platform: str) -> None:
         query = """
         INSERT INTO usage_stats (timestamp, user_count, platform)

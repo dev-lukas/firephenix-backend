@@ -39,20 +39,20 @@ class TeamspeakBot:
         """Background thread to update minutes every 60 seconds"""
         logging.info("Teamspeak Time Thread started successfully.")
         while True:
-            if self.connected_users:
-                self.database.update_times(self.connected_users, "teamspeak")
             if datetime.now().minute == 0:
                 self.database.log_usage_stats(
                     user_count=len(self.connected_users),
                     platform='teamspeak'
                 )
+            if self.connected_users:
+                self.database.update_times(self.connected_users, "teamspeak")
             time.sleep(60)
-
-    def get_client_uid(self, client_id, ts3conn):
-        """Get unique identifier for a client"""
+        
+    def get_client_data(self, client_id, ts3conn):
+        """Get client name and unique identifier for a client"""
         try:
             client_info = ts3conn.exec_("clientinfo", clid=client_id)[0]
-            return client_info["client_unique_identifier"]
+            return client_info["client_unique_identifier"], client_info["client_nickname"]
         except ts3.query.TS3QueryError as err:
             print(f"Error getting client info: {err}")
             return None
@@ -74,9 +74,10 @@ class TeamspeakBot:
                 for client in clients:
                     if client.get("client_type") == "0":  # Regular clients only
                         if self.excluded_role_id not in client.get("client_servergroups", "").split(","):
-                            uid = self.get_client_uid(client["clid"], ts3conn)
+                            uid, name = self.get_client_data(client["clid"], ts3conn)
                             self.connected_users.add(uid)
                             self.client_uid_map[client["clid"]] = uid
+                            self.database.update_user_name(uid, name, "teamspeak")
                 
                 # Event loop
                 while True:
@@ -90,9 +91,10 @@ class TeamspeakBot:
                         if event[0]["reasonid"] == "0":  # Client connected
                             if event[0].get("client_type") == "0":
                                 if self.excluded_role_id not in event[0].get("client_servergroups", "").split(","):
-                                    uid = self.get_client_uid(event[0]["clid"], ts3conn)
+                                    uid, name = self.get_client_data(event[0]["clid"], ts3conn)
                                     self.connected_users.add(uid)
                                     self.client_uid_map[event[0]["clid"]] = uid
+                                    self.database.update_user_name(uid, name, "teamspeak")
                                 
                         elif event[0]["reasonid"] == "8":  # Client disconnected
                             uid = self.client_uid_map.get(event[0]["clid"])

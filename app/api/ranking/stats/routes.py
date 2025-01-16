@@ -7,7 +7,7 @@ from app.bots.teamspeakbot import TeamspeakBot
 ranking_stats_bp = Blueprint('ranking_stats', __name__)
 
 @ranking_stats_bp.route('/api/ranking/stats', methods=['GET'])
-def get_ranking():
+def get_stats():
 
     logging = RankingLogger(__name__).get_logger()
 
