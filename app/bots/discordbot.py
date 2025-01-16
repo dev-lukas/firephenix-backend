@@ -1,5 +1,5 @@
 import asyncio
-import os
+import datetime
 import discord
 from discord.ext import commands
 from app.utils.database import DatabaseManager
@@ -10,23 +10,34 @@ logging = RankingLogger(__name__).get_logger()
 
 
 class DiscordBot:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(DiscordBot, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.token = Config.DISCORD_TOKEN
-        
-        self.intents = discord.Intents.default()
-        self.intents.voice_states = True
-        self.intents.message_content = True
-        self.intents.members = True
+        if not hasattr(self, 'initialized'):
+            self.initialized = True
+            self.token = Config.DISCORD_TOKEN
+            
+            self.intents = discord.Intents.default()
+            self.intents.voice_states = True
+            self.intents.message_content = True
+            self.intents.members = True
 
-        self.bot = commands.Bot(command_prefix='!', intents=self.intents)
+            self.bot = commands.Bot(command_prefix='!', intents=self.intents)
+            self.time_tracker = None
 
-        self.setup_events()
+            self.setup_events()
 
     def setup_events(self):
         
         @self.bot.event
         async def on_ready():
-            await self.bot.add_cog(self.TimeTracker(self.bot))
+            self.time_tracker = self.TimeTracker(self.bot)
+            await self.bot.add_cog(self.time_tracker)
 
     def run(self):
         try:
@@ -34,17 +45,17 @@ class DiscordBot:
         except Exception as e:
             logging.error(f"Error running the bot: {e}")
 
+    def get_online_users(self):
+        if self.time_tracker:
+            return list(self.time_tracker.connected_users)
+        return []
+
     class TimeTracker(commands.Cog):
 
         def __init__(self, bot: commands.Bot):
             self.excluded_role_id = Config.DISCORD_EXCLUDED_ROLE_ID
 
-            self.database = DatabaseManager(
-                host=os.getenv("DB_HOST"),
-                user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASSWORD"),
-                database=os.getenv("DB_NAME")
-            )
+            self.database = DatabaseManager()
             self.bot = bot
             self.connected_users = set()
             self.bg_task = self.bot.loop.create_task(self.scan_voice_channels())
@@ -58,6 +69,11 @@ class DiscordBot:
             while not self.bot.is_closed():
                 if self.connected_users:
                     self.database.update_times(self.connected_users, "discord")
+                if datetime.now().minute == 0:
+                    self.database.log_usage_stats(
+                        user_count=len(self.connected_users),
+                        platform='discord'
+                    )
                 await asyncio.sleep(60)
 
         async def scan_voice_channels(self):

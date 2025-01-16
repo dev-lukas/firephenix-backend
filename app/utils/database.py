@@ -2,25 +2,25 @@ import sys
 from typing import List, Optional, Set, Tuple, Union
 import mariadb
 from app.utils.logger import RankingLogger
+from app.config import Config
 
 logging = RankingLogger(__name__).get_logger()
 
 __all__ = ['DatabaseManager']
 
 class DatabaseManager:
-    def __init__(self, host, user, password, database, port: int = 3306):
+    def __init__(self):
         try:
             self.conn = mariadb.connect(
-                host=host,
-                port=port,
-                user=user,
-                password=password,
-                database=database
+                host=Config.DB_HOST,
+                port=int(Config.DB_PORT),
+                user=Config.DB_USER,
+                password=Config.DB_PASSWORD,
+                database=Config.DB_NAME
             )
             self.conn.autocommit = False
             self.cursor = self.conn.cursor()
             self.create_tables()
-            logging.info("Successfully connected to MariaDB")
         except mariadb.Error as e:
             logging.error(f"Error connecting to the database: {e}")
             sys.exit(1)
@@ -41,11 +41,43 @@ class DatabaseManager:
                     INDEX idx_teamspeak_uid (teamspeak_uid)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci
             """)
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS usage_stats (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                timestamp DATETIME NOT NULL,
+                user_count INT NOT NULL,
+                platform ENUM('discord', 'teamspeak') NOT NULL,
+                INDEX idx_timestamp (timestamp),
+                INDEX idx_platform (platform)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
             self.conn.commit()
         except mariadb.Error as e:
             logging.error(f"Error creating tables: {e}")
             self.conn.rollback()
             raise
+    
+    def execute_query(self, query: str, params: tuple = None) -> Optional[List[Tuple]]:
+        """
+        Generic wrapper for executing SQL queries
+        Returns query results or None on error
+        """
+        try:
+            if params:
+                self.cursor.execute(query, params)
+            else:
+                self.cursor.execute(query)
+                
+            if query.strip().upper().startswith('SELECT'):
+                return self.cursor.fetchall()
+            else:
+                self.conn.commit()
+                return None
+                
+        except mariadb.Error as e:
+            logging.error(f"Query execution error: {e}")
+            self.conn.rollback()
+            return None
 
     def update_times(self, users: Set[Union[int, str]], platform: str, minutes: int = 1) -> None:
         """Batch update time values for multiple users"""
@@ -79,39 +111,13 @@ class DatabaseManager:
             logging.error(f"Error updating times: {e}")
             self.conn.rollback()
             raise
-
-    def get_user_times(self, user_id: Union[int, str], platform: str) -> Optional[Tuple[int, int, int, int]]:
-        """Get time values for a specific user"""
-        try:
-            id_column = "discord_uid" if platform == "discord" else "teamspeak_uid"
-            self.cursor.execute(f"""
-                SELECT total_time, daily_time, weekly_time, monthly_time 
-                FROM user_time 
-                WHERE {id_column} = ?
-            """, (user_id,))
-            return self.cursor.fetchone()
-        except mariadb.Error as e:
-            logging.error(f"Error getting user times: {e}")
-            raise
-
-    def get_top_users(self, timeframe: str, platform: str, limit: int = 10) -> List[Tuple[Union[int, str], int]]:
-        """Get top users for a specific timeframe and platform"""
-        try:
-            time_column = f"{timeframe}_time"
-            platform_column = f"{platform}_uid"
-            
-            self.cursor.execute(f"""
-                SELECT {platform_column}, {time_column}
-                FROM user_time
-                WHERE {platform_column} IS NOT NULL
-                AND {time_column} > 0
-                ORDER BY {time_column} DESC
-                LIMIT ?
-            """, (limit,))
-            return self.cursor.fetchall()
-        except mariadb.Error as e:
-            logging.error(f"Error getting top users: {e}")
-            raise
+    
+    def log_usage_stats(self, user_count: int, platform: str) -> None:
+        query = """
+        INSERT INTO usage_stats (timestamp, user_count, platform)
+        VALUES (DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00'), ?, ?)
+        """
+        self.execute_query(query, (user_count, platform))
 
     def close(self) -> None:
         """Close database connection"""
@@ -120,6 +126,5 @@ class DatabaseManager:
                 self.cursor.close()
             if self.conn:
                 self.conn.close()
-            logging.info("Database connection closed")
         except mariadb.Error as e:
             logging.error(f"Error closing database connection: {e}")

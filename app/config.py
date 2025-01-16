@@ -16,6 +16,7 @@ class Config:
     TS3_PASSWORD=os.getenv('TS3_PASSWORD')
     # Database
     DB_HOST="127.0.0.1"
+    DB_PORT="3306"
     DB_USER="root"
     DB_NAME="firephenix"
     DB_PASSWORD=os.getenv("DB_PASSWORD")

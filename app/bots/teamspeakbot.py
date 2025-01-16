@@ -1,7 +1,7 @@
+import datetime
 import threading
 import ts3
 import time
-import os
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
 from app.config import Config
@@ -10,23 +10,30 @@ logging = RankingLogger(__name__).get_logger()
 
 
 class TeamspeakBot:
-    def __init__(self):
-        self.host = Config.TS3_HOST
-        self.port = int(Config.TS3_PORT)
-        self.username = Config.TS3_USERNAME
-        self.password = Config.TS3_PASSWORD
-        self.server_id = int(Config.TS3_SERVER_ID)
-        self.excluded_role_id = Config.TS3_EXCLUDED_ROLE_ID
-        
-        self.database = DatabaseManager(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME")
-        )
+    _instance = None
 
-        self.connected_users = set()
-        self.client_uid_map = {}
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(TeamspeakBot, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if not hasattr(self, 'initialized'):
+            self.initialized = True
+            self.host = Config.TS3_HOST
+            self.port = int(Config.TS3_PORT)
+            self.username = Config.TS3_USERNAME
+            self.password = Config.TS3_PASSWORD
+            self.server_id = int(Config.TS3_SERVER_ID)
+            self.excluded_role_id = Config.TS3_EXCLUDED_ROLE_ID
+            
+            self.database = DatabaseManager()
+
+            self.connected_users = set()
+            self.client_uid_map = {}
+
+    def get_online_users(self):
+        return list(self.connected_users)
 
     def update_time(self):
         """Background thread to update minutes every 60 seconds"""
@@ -34,7 +41,12 @@ class TeamspeakBot:
         while True:
             if self.connected_users:
                 self.database.update_times(self.connected_users, "teamspeak")
-            time.sleep(60)
+            if datetime.now().minute == 0:
+                self.database.log_usage_stats(
+                    user_count=len(self.connected_users),
+                    platform='teamspeak'
+                )
+    time.sleep(60)
 
     def get_client_uid(self, client_id, ts3conn):
         """Get unique identifier for a client"""

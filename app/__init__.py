@@ -1,10 +1,18 @@
 import threading
 from flask import Flask
-from app.api.ranking.routes import ranking_bp
 from app.bots.teamspeakbot import TeamspeakBot
 from app.bots.discordbot import DiscordBot
+from app.utils.logger import RankingLogger
+
+from app.api.ranking.routes import ranking_bp
+from app.api.ranking.stats.routes import ranking_stats_bp
+from app.api.ranking.usage.routes import ranking_usage_bp
+
+logging = RankingLogger(__name__).get_logger()
 
 def create_app():
+
+    logging.info("Starting Bots...")
 
     ts = TeamspeakBot()
     dc = DiscordBot()
@@ -15,6 +23,15 @@ def create_app():
     ts_thread.start()
     dc_thread.start()
 
+    logging.info("Bots started successfully.")
+    logging.info("Starting Flask App...")
+
     app = Flask(__name__)
+
     app.register_blueprint(ranking_bp)
+    app.register_blueprint(ranking_stats_bp)
+    app.register_blueprint(ranking_usage_bp)
+
+    logging.info("Flask App started successfully. System ready.")
+
     return app
