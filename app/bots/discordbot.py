@@ -1,4 +1,5 @@
 import asyncio
+import time
 import discord
 from datetime import datetime
 from discord.ext import commands
@@ -40,10 +41,17 @@ class DiscordBot:
             await self.bot.add_cog(self.time_tracker)
 
     def run(self):
-        try:
-            self.bot.run(self.token)
-        except Exception as e:
-            logging.error(f"Error running the bot: {e}")
+        while True:
+            try:
+                self.bot.run(self.token)
+            except discord.errors.ConnectionClosed:
+                logging.error("Connection to Discord lost. Reconnecting in 5 seconds.")
+            except discord.errors.GatewayNotFound:
+                logging.error("Gateway not found. Reconnecting in 5 seconds.")
+                time.sleep(30)
+            except Exception as e:
+                logging.error(f"Error running the bot: {e}")
+                time.sleep(60)
 
     def get_online_users(self):
         if self.time_tracker:
@@ -60,6 +68,7 @@ class DiscordBot:
             self.connected_users = set()
             self.bg_task = self.bot.loop.create_task(self.scan_voice_channels())
             self.bg_task = self.bot.loop.create_task(self.update_time())
+            self.monitor_task = self.bot.loop.create_task(self.monitor_background_tasks())
             logging.info("Discord Bot started successfully.")
 
         async def update_time(self):
@@ -67,13 +76,16 @@ class DiscordBot:
             """
             await self.bot.wait_until_ready()
             while not self.bot.is_closed():
-                if datetime.now().minute == 0:
-                    self.database.log_usage_stats(
-                        user_count=len(self.connected_users),
-                        platform='discord'
-                    )
-                if self.connected_users:
-                    self.database.update_times(self.connected_users, "discord")
+                try:
+                    if datetime.now().minute == 0:
+                        self.database.log_usage_stats(
+                            user_count=len(self.connected_users),
+                            platform='discord'
+                        )
+                    if self.connected_users:
+                        self.database.update_times(self.connected_users, "discord")
+                except Exception as e:
+                    logging.error(f"Error updating time: {e}")
                 await asyncio.sleep(60)
 
         async def scan_voice_channels(self):
@@ -93,11 +105,25 @@ class DiscordBot:
         async def on_voice_state_update(self, member, before, after):
             """on_voice_state_update event handler that tracks each connected user.
             It triggers when a user joins or leaves a voice channel."""
-            if before.channel is None and after.channel is not None:
-                if not discord.utils.get(member.roles, name=self.excluded_role_id):
-                    self.connected_users.add(member.id)
-                    self.database.update_user_name(member.id, member.display_name, "discord")
+            try:
+                if before.channel is None and after.channel is not None:
+                    if not discord.utils.get(member.roles, name=self.excluded_role_id):
+                        self.connected_users.add(member.id)
+                        self.database.update_user_name(member.id, member.display_name, "discord")
 
-            elif before.channel is not None and after.channel is None:
-                if not discord.utils.get(member.roles, name=self.excluded_role_id):
-                    self.connected_users.remove(member.id)
+                elif before.channel is not None and after.channel is None:
+                    if not discord.utils.get(member.roles, name=self.excluded_role_id):
+                        self.connected_users.remove(member.id)
+            except Exception as e:
+                logging.error(f"Error updating voice state: {e}")
+
+        async def monitor_background_tasks(self):
+            while not self.bot.is_closed():
+                try:
+                    if self.bg_task.done():
+                        if self.bg_task.exception():
+                            logging.error(f"Background task failed: {self.bg_task.exception()}")
+                            self.bg_task = self.bot.loop.create_task(self.update_time())
+                except Exception as e:
+                    logging.error(f"Error in task monitor: {e}")
+                await asyncio.sleep(10)
