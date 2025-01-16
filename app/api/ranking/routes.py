@@ -38,7 +38,9 @@ def get_ranking():
             COALESCE(division, 'Unranked') as division,
             total_time as minutes,
             last_update,
-            RANK() OVER (ORDER BY total_time DESC) as rank
+            RANK() OVER (ORDER BY total_time DESC) as rank,
+            discord_uid,
+            teamspeak_uid
         FROM user_time
         WHERE total_time > 0
         """
@@ -57,7 +59,7 @@ def get_ranking():
         
         players = []
         for row in result:
-            if str(row[0]) in online_users:
+            if row[7] in online_users or row[8] in online_users:
                 last_online = "Online"
             else:
                 time_diff = current_time - row[5] 
@@ -73,7 +75,7 @@ def get_ranking():
                             last_online = "Vor einer Stunde"
                     else:
                         minutes = (time_diff.seconds % 3600) // 60
-                        last_online = f"{minutes}m ago"
+                        last_online = f"vor {minutes} Minuten"
                         if minutes == 1:
                             last_online = "Vor einer Minute"
             

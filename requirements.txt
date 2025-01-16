@@ -3,3 +3,4 @@ discord.py
 ts3>=2.0.0b2
 mariadb
 flask
+flask-cors

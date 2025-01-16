@@ -1,5 +1,6 @@
 import threading
 from flask import Flask
+from flask_cors import CORS
 from app.bots.teamspeakbot import TeamspeakBot
 from app.bots.discordbot import DiscordBot
 from app.utils.logger import RankingLogger
@@ -28,6 +29,14 @@ def create_app():
     logging.info("Starting Flask App...")
 
     app = Flask(__name__)
+
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": "*",
+            "methods": ['GET', 'POST', "PUT", "DELETE"],
+            "allow_headers": ['Content-Type', 'Authorization']
+        }
+    })
 
     app.register_blueprint(ranking_bp)
     app.register_blueprint(ranking_stats_bp)
