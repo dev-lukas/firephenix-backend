@@ -22,6 +22,7 @@ class Config:
     DB_PASSWORD=os.getenv("DB_PASSWORD")
     # Rankingsystem
     LEVEL_REQUIREMENTS = {
+        1: 0,
         2: 300,     
         3: 600,     
         4: 1200,     

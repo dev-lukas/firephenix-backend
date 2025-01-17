@@ -114,6 +114,53 @@ class DatabaseManager:
             logging.error(f"Error updating times: {e}")
             self.conn.rollback()
             raise
+
+    def update_ranks(self, users: Set[Union[int, str]], platform: str) -> List[Tuple[Union[int, str], int]]:
+        """
+        Update ranks for a specific set of users based on their total time.
+        Returns a list of users who ranked up and their new levels.
+        """
+        rankups = []  # List to store users who ranked up and their new levels
+
+        try:
+            id_column = "discord_uid" if platform == "discord" else "teamspeak_uid"
+            user_ids = list(users)
+
+            if not user_ids:
+                return rankups
+
+            placeholders = ','.join(['?'] * len(user_ids))
+            select_query = f"""
+                SELECT {id_column}, total_time, level 
+                FROM user_time 
+                WHERE {id_column} IN ({placeholders})
+            """
+            self.cursor.execute(select_query, user_ids)
+            user_data = self.cursor.fetchall()
+
+            for user_id, total_time, current_level in user_data:
+                calculated_level = Config.get_level_for_minutes(total_time)
+                if calculated_level != current_level:
+                    update_query = """
+                        UPDATE user_time 
+                        SET level = ? 
+                        WHERE {id_column} = ?
+                    """.format(id_column=id_column)
+                    self.cursor.execute(update_query, (calculated_level, user_id))
+                    rankups.append((user_id, calculated_level))
+                    logging.info(f"Updated user {user_id} from level {current_level} to {calculated_level}")
+
+            self.conn.commit()
+            logging.debug(f"Checked and updated levels for {len(user_data)} users")
+
+        except mariadb.Error as e:
+            logging.error(f"Error updating ranks: {e}")
+            self.conn.rollback()
+            raise
+
+        return rankups
+
+
     
     def update_user_name(self, user_id: str, name: str, platform: str):
         """

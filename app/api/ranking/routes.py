@@ -34,8 +34,8 @@ def get_ranking():
         SELECT 
             id,
             COALESCE(name, 'Unknown') as name,
-            COALESCE(level, 0) as level,
-            COALESCE(division, 'Unranked') as division,
+            COALESCE(level, 1) as level,
+            COALESCE(division, 1) as division,
             total_time as minutes,
             last_update,
             RANK() OVER (ORDER BY total_time DESC) as rank,

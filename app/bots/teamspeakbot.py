@@ -54,6 +54,9 @@ class TeamspeakBot:
                         self.client_uid_map[client["clid"]] = uid
                         self.database.update_user_name(uid, name, "teamspeak")
 
+    def get_online_users(self):
+        return list(self.connected_users)
+
     def get_client_data(self, client_id, ts3conn):
         """Get client name and unique identifier for a client"""
         try:
@@ -74,6 +77,7 @@ class TeamspeakBot:
                 )
             if self.connected_users:
                 self.database.update_times(self.connected_users, "teamspeak")
+                self.database.update_ranks(self.connected_users, "teamspeak")
             time.sleep(60)
 
     def run(self):

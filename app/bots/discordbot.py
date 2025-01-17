@@ -84,6 +84,7 @@ class DiscordBot:
                         )
                     if self.connected_users:
                         self.database.update_times(self.connected_users, "discord")
+                        self.database.update_ranks(self.connected_users, "discord")
                 except Exception as e:
                     logging.error(f"Error updating time: {e}")
                 await asyncio.sleep(60)
