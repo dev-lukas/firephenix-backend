@@ -187,6 +187,27 @@ class DatabaseManager:
         """
         self.execute_query(query, (user_count, platform))
 
+    def get_user_rank(self, user_id: Union[int, str], platform: str) -> Optional[int]:
+        """
+        Get the rank (level) of a user based on their TeamSpeak or Discord ID.
+
+        Args:
+            user_id: The user's unique identifier (TeamSpeak UID or Discord ID)
+            platform: The platform ('discord' or 'teamspeak')
+
+        Returns:
+            Optional[int]: The user's rank (level) or None if not found
+        """
+        id_column = "discord_uid" if platform == "discord" else "teamspeak_uid"
+        query = f"SELECT level FROM user_time WHERE {id_column} = ?"
+        
+        try:
+            result = self.execute_query(query, (user_id,))
+            return result[0][0] if result else None
+        except Exception as e:
+            logging.error(f"Error retrieving rank for user {user_id}: {e}")
+            return None
+
     def close(self) -> None:
         """Close database connection"""
         try:

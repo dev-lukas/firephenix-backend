@@ -9,27 +9,47 @@ from app.config import Config
 logging = RankingLogger(__name__).get_logger()
 
 class TeamspeakBot:
+    """
+    A TeamSpeak bot implementation using the Singleton pattern for managing
+    user connections, ranks, and time tracking.
+    """
     _instance = None
-    
+    INITIAL_RECONNECT_DELAY = 30
+    MAX_RECONNECT_DELAY = 300
+    BANNED_WAIT_TIME = 300
+    KEEPALIVE_TIMEOUT = 240
+    UPDATE_INTERVAL = 60
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(TeamspeakBot, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
-        if not hasattr(self, 'initialized'):
-            self.initialized = True
-            self.host = Config.TS3_HOST
-            self.port = int(Config.TS3_PORT)
-            self.username = Config.TS3_USERNAME
-            self.password = Config.TS3_PASSWORD
-            self.server_id = int(Config.TS3_SERVER_ID)
-            self.excluded_role_id = Config.TS3_EXCLUDED_ROLE_ID
-            self.database = DatabaseManager()
-            self.connected_users = set()
-            self.client_uid_map = {}
-            self.running = False
-            self.reconnect_delay = 30  # Start with 30 seconds delay[14]
+        if hasattr(self, 'initialized'):
+            return
+
+        self.initialized = True
+        self._init_config()
+        self._init_state()
+
+    def _init_config(self):
+        """Initialize configuration parameters"""
+        self.host = Config.TS3_HOST
+        self.port = int(Config.TS3_PORT)
+        self.username = Config.TS3_USERNAME
+        self.password = Config.TS3_PASSWORD
+        self.server_id = int(Config.TS3_SERVER_ID)
+        self.excluded_role_id = Config.TS3_EXCLUDED_ROLE_ID
+
+    def _init_state(self):
+        """Initialize state variables"""
+        self.database = DatabaseManager()
+        self.connected_users = set()
+        self.client_uid_map = {}
+        self.client_dbid_map = {}
+        self.running = False
+        self.reconnect_delay = self.INITIAL_RECONNECT_DELAY
 
     def connect_to_server(self):
         """Establish connection to TeamSpeak server"""
@@ -40,130 +60,221 @@ class TeamspeakBot:
         ts3conn.exec_("servernotifyregister", event="server")
         return ts3conn
 
-    def handle_initial_clients(self, ts3conn):
-        """Handle initial client list after connection"""
-        self.connected_users.clear()
-        self.client_uid_map.clear()
-        clients = ts3conn.exec_("clientlist")
-        for client in clients:
-            if client.get("client_type") == "0":
-                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=client["clid"])
-                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
-                if self.excluded_role_id not in group_ids:
-                    uid, name = self.get_client_data(client["clid"], ts3conn)
-                    if uid:
-                        self.connected_users.add(uid)
-                        self.client_uid_map[client["clid"]] = uid
-                        self.database.update_user_name(uid, name, "teamspeak")
-
-    def get_online_users(self):
-        return list(self.connected_users)
-
     def get_client_data(self, client_id, ts3conn):
-        """Get client name and unique identifier for a client"""
+        """
+        Retrieve client information from TeamSpeak server
+        
+        Args:
+            client_id: Client ID to query
+            ts3conn: Active TeamSpeak connection
+            
+        Returns:
+            tuple: (client_unique_identifier, client_nickname) or None if error
+        """
         try:
             client_info = ts3conn.exec_("clientinfo", clid=client_id)[0]
-            return client_info["client_unique_identifier"], client_info["client_nickname"]
+            return (
+                client_info["client_unique_identifier"],
+                client_info["client_nickname"]
+            )
         except ts3.query.TS3QueryError as err:
-            print(f"Error getting client info: {err}")
+            logging.error(f"Error getting client info: {err}")
             return None
 
-    def update_rank(self, upranked_user):
-        """Update user rank in the Teamspeak server"""
+    def handle_initial_clients(self, ts3conn):
+        """Process existing clients after connection"""
+        self.connected_users.clear()
+        self.client_uid_map.clear()
+        
+        clients = ts3conn.exec_("clientlist")
+        for client in clients:
+            if client.get("client_type") != "0":
+                continue
+            
+            client_info = ts3conn.exec_("clientinfo", clid=client["clid"])[0]
+            cldbid = client_info["client_database_id"]
+            groups_info = ts3conn.exec_("servergroupsbyclientid", 
+                                      cldbid=cldbid)
+            group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+            
+            if self.excluded_role_id in group_ids:
+                continue
+
+            client_data = self.get_client_data(client["clid"], ts3conn)
+            if client_data:
+                uid, name = client_data
+                self.connected_users.add(uid)
+                self.client_uid_map[client["clid"]] = uid
+                self.database.update_user_name(uid, name, "teamspeak")
+
+    def check_rank(self, uid, ts3conn):
+        """Check if user rank needs to be updated
+        Args:
+            clid: Client ID
+            uid: Unique identifier
+        """
+        try:
+            logging.info("Checking rank for user: %s", uid)
+            db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=uid)[0]
+            cldbid = db_info.get("cldbid")
+            rank = self.database.get_user_rank(uid, "teamspeak")
+            groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+            group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+            if Config.TEAMSPEAK_LEVEL_MAP[rank] not in group_ids:
+                logging.debug(f"Rank {rank} update required for user: {uid}")
+                self.update_rank([(uid, rank)])
+
+        except Exception:
+            logging.error(f"Error getting server groups for client {uid}")
+
+    def update_rank(self, upranked_users):
+        """
+        Update user ranks in the TeamSpeak server
+        
+        Args:
+            upranked_users: List of tuples containing (client_id, new_rank)
+        """
         try:
             with self.connect_to_server() as ts3conn:
-                for client_id, rank in upranked_user:
-                    db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
-                    cldbid = db_info.get("cldbid")
-                    groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
-                    for group in groups_info:
-                        group_id = int(group.get("sgid", 0))
-                        if group_id in Config.TEAMSPEAK_LEVEL_MAP.values():
-                            ts3conn.exec_("servergroupdelclient", 
-                                        sgid=group_id, 
-                                        cldbid=cldbid)
-                    ts3conn.exec_("servergroupaddclient", 
-                                sgid=int(Config.TEAMSPEAK_LEVEL_MAP[rank]), 
-                                cldbid=cldbid)        
-                    logging.info(f"Updated rank for user {client_id} to rank {rank}")
-
-        except ts3.query.TS3QueryError as err:
-            if "already member" in str(err).lower():
-                logging.warning(f"User {client_id} is already in rank {rank}")
-            else:
-                logging.error(f"TS3 Query Error while updating rank for client {client_id}: {err}")
+                for client_id, rank in upranked_users:
+                    self._process_rank_update(ts3conn, client_id, rank)
         except Exception as e:
-            logging.error(f"Unexpected error while updating rank for client {client_id}: {e}")
+            logging.error(f"Rank update failed: {e}")
+
+    def _process_rank_update(self, ts3conn, client_id, rank):
+        """Process individual rank updates"""
+        try:
+            db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
+            cldbid = db_info.get("cldbid")
+            
+            groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+            for group in groups_info:
+                group_id = int(group.get("sgid", 0))
+                if group_id in Config.TEAMSPEAK_LEVEL_MAP.values():
+                    ts3conn.exec_("servergroupdelclient", 
+                                sgid=group_id, 
+                                cldbid=cldbid)
+            
+            new_group_id = int(Config.TEAMSPEAK_LEVEL_MAP[rank])
+            ts3conn.exec_("servergroupaddclient", 
+                         sgid=new_group_id, 
+                         cldbid=cldbid)
+            
+            logging.info(f"Updated rank for user {client_id} to rank {rank}")
+            
+        except ts3.query.TS3QueryError as err:
+            logging.error(f"TS3 Query Error: {err}")
 
     def update_time(self):
-        """Background thread to update minutes every 60 seconds"""
+        """Background thread for updating user times and ranks"""
         logging.info("Teamspeak Time Thread started successfully.")
+        
         while self.running:
             if datetime.now().minute == 0:
                 self.database.log_usage_stats(
                     user_count=len(self.connected_users),
                     platform='teamspeak'
                 )
+                
             if self.connected_users:
                 self.database.update_times(self.connected_users, "teamspeak")
-                upranked_user = self.database.update_ranks(self.connected_users, "teamspeak")
-                self.update_rank(upranked_user)
-            time.sleep(60)
+                upranked_users = self.database.update_ranks(
+                    self.connected_users, 
+                    "teamspeak"
+                )
+                self.update_rank(upranked_users)
+                
+            time.sleep(self.UPDATE_INTERVAL)
+
+    def handle_event(self, event, ts3conn):
+        """
+        Process TeamSpeak server events
+        
+        Args:
+            event: TeamSpeak event data
+            ts3conn: Active TeamSpeak connection
+        """
+        logging.debug(f"Event: {event['reasonid']}")
+        
+        if event["reasonid"] == "0":  # Client connected
+            self._handle_client_connect(event, ts3conn)
+        elif event["reasonid"] == "8":  # Client disconnected
+            self._handle_client_disconnect(event)
+
+    def _handle_client_connect(self, event, ts3conn):
+        """Handle client connection event"""
+        if event.get("client_type") != "0":
+            return
+
+        client_info = ts3conn.exec_("clientinfo", clid=event["clid"])[0]
+        cldbid = client_info["client_database_id"]
+        groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+        group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+        
+        if self.excluded_role_id in group_ids:
+            return
+
+        logging.debug("Client connected: %s", event["clid"])
+        client_data = self.get_client_data(event["clid"], ts3conn)
+        if client_data:
+            uid, name = client_data
+            self.connected_users.add(uid)
+            self.client_uid_map[event["clid"]] = uid
+            self.database.update_user_name(uid, name, "teamspeak")
+            logging.debug("User connected: %s", uid)
+            self.check_rank(uid, ts3conn)
+
+    def _handle_client_disconnect(self, event):
+        """Handle client disconnection event"""
+        uid = self.client_uid_map.pop(event["clid"], None)
+        if uid in self.connected_users:
+            self.connected_users.remove(uid)
 
     def run(self):
-        """Main bot loop with reconnection logic"""
+        """Main bot execution loop with reconnection handling"""
         self.running = True
         update_thread = threading.Thread(target=self.update_time, daemon=True)
         update_thread.start()
 
         while self.running:
             try:
-                with self.connect_to_server() as ts3conn:
-                    logging.info("Successfully connected to TeamSpeak server")
-                    self.reconnect_delay = 30
-                    self.handle_initial_clients(ts3conn)
-                    
-                    while self.running:
-                        ts3conn.send_keepalive()
-                        try:
-                            event = ts3conn.wait_for_event(timeout=240)
-                            if event:
-                                self.handle_event(event[0], ts3conn)
-                        except ts3.query.TS3TimeoutError:
-                            continue
-
-            except ts3.query.TS3QueryError as err:
-                logging.error(f"TS3 Query Error: {err}")
-                if "banned" in str(err).lower():
-                    logging.warning("Bot is banned, waiting longer before reconnect")
-                    time.sleep(300)
-                else:
-                    time.sleep(self.reconnect_delay)
-                    self.reconnect_delay = min(300, self.reconnect_delay * 2)
-                    
+                self._run_connection_loop()
             except Exception as e:
-                logging.error(f"Unexpected error: {e}")
-                time.sleep(self.reconnect_delay)
-                self.reconnect_delay = min(300, self.reconnect_delay * 2)
+                self._handle_connection_error(e)
 
-    def handle_event(self, event, ts3conn):
-        """Handle TeamSpeak server events"""
-        logging.debug(f"Event: {event['reasonid']}")
-        if event["reasonid"] == "0":  # Client connected
-            if event.get("client_type") == "0":
-                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=event["clid"])
-                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
-                if self.excluded_role_id not in group_ids:
-                    uid, name = self.get_client_data(event["clid"], ts3conn)
-                    if uid:
-                        self.connected_users.add(uid)
-                        self.client_uid_map[event["clid"]] = uid
-                        self.database.update_user_name(uid, name, "teamspeak")
-                    
-        elif event["reasonid"] == "8":  # Client disconnected
-            uid = self.client_uid_map.pop(event["clid"], None)
-            if uid in self.connected_users:
-                self.connected_users.remove(uid)
+    def _run_connection_loop(self):
+        """Handle main connection loop"""
+        with self.connect_to_server() as ts3conn:
+            logging.info("Successfully connected to TeamSpeak server")
+            self.reconnect_delay = self.INITIAL_RECONNECT_DELAY
+            self.handle_initial_clients(ts3conn)
+            
+            while self.running:
+                ts3conn.send_keepalive()
+                try:
+                    event = ts3conn.wait_for_event(timeout=self.KEEPALIVE_TIMEOUT)
+                    if event:
+                        self.handle_event(event[0], ts3conn)
+                except ts3.query.TS3TimeoutError:
+                    continue
+
+    def _handle_connection_error(self, error):
+        """Handle connection errors and implement backoff strategy"""
+        if isinstance(error, ts3.query.TS3QueryError):
+            logging.error(f"TS3 Query Error: {error}")
+            if "banned" in str(error).lower():
+                logging.warning("Bot is banned, waiting longer before reconnect")
+                time.sleep(self.BANNED_WAIT_TIME)
+                return
+
+        logging.error(f"Unexpected error: {error}")
+        time.sleep(self.reconnect_delay)
+        self.reconnect_delay = min(self.MAX_RECONNECT_DELAY, 
+                                 self.reconnect_delay * 2)
+
+    def get_online_users(self):
+        """Return list of currently connected users"""
+        return list(self.connected_users)
 
     def stop(self):
         """Gracefully stop the bot"""
