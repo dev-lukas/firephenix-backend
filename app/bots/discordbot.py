@@ -68,6 +68,7 @@ class DiscordBot:
             self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
             self.connected_users = set()
             self.bg_task = self.bot.loop.create_task(self.scan_voice_channels())
+            self.bg_task = self.bot.loop.create_task(self.check_default_roles())
             self.bg_task = self.bot.loop.create_task(self.update_time())
             self.monitor_task = self.bot.loop.create_task(self.monitor_background_tasks())
             logging.info("Discord Bot started successfully.")
@@ -80,6 +81,18 @@ class DiscordBot:
             rankup = discord.utils.get(member.guild.roles, id=Config.DISCORD_LEVEL_MAP[level])
             await member.add_roles(rankup)
             logging.info(f"User {user_id} ranked up to level {level}")
+
+        async def check_rank(self, user_id):
+            """Check if user has the correct rank and update if necessary"""
+            rank = self.database.get_user_rank(user_id, "discord")
+            member = await self.guild.fetch_member(user_id)
+            correct_rank = False
+            for role in member.roles:
+                if role.id == Config.DISCORD_LEVEL_MAP[rank]:
+                    correct_rank = True
+                    break
+            if not correct_rank:
+                await self.set_ranks(user_id, rank)
 
         async def update_time(self):
             """Background task that runs every minute to update the time spent in voice chat for each user.
@@ -114,6 +127,26 @@ class DiscordBot:
               
             logging.info(f"Initial voice channel scan complete. Found {len(self.connected_users)} users.")
 
+        async def check_default_roles(self):
+            """Check all members for rank roles and gives user the base role if none present"""
+            await self.bot.wait_until_ready()
+            try:
+                default_role = discord.utils.get(
+                    self.guild.roles, 
+                    id=Config.DISCORD_LEVEL_MAP[1]
+                )
+                async for member in self.guild.fetch_members():
+                    if not discord.utils.get(member.roles, name=self.excluded_role_id) and not member.bot:
+                        has_rank = False
+                        for role in member.roles:
+                            if role.id in Config.DISCORD_LEVEL_MAP.values():
+                                has_rank = True
+                                break
+                        if not has_rank:
+                            await member.add_roles(default_role)
+            except Exception as e:
+                logging.error(f"Error checking default roles: {e}")
+
         @commands.Cog.listener()
         async def on_voice_state_update(self, member, before, after):
             """on_voice_state_update event handler that tracks each connected user.
@@ -123,12 +156,25 @@ class DiscordBot:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
                         self.connected_users.add(member.id)
                         self.database.update_user_name(member.id, member.display_name, "discord")
+                        self.check_rank(member.id)
 
                 elif before.channel is not None and after.channel is None:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
                         self.connected_users.remove(member.id)
             except Exception as e:
                 logging.error(f"Error updating voice state: {e}")
+
+        @commands.Cog.listener()
+        async def on_member_join(self, member):
+            try:
+                if not member.bot:
+                    default_role = discord.utils.get(
+                        member.guild.roles, 
+                        id=Config.DISCORD_LEVEL_MAP[1]
+                    )
+                    await member.add_roles(default_role)
+            except Exception as e:
+                logging.error(f"Error adding default role to new member: {e}")
 
         async def monitor_background_tasks(self):
             while not self.bot.is_closed():
