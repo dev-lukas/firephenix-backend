@@ -151,7 +151,6 @@ class DatabaseManager:
                     logging.info(f"Updated user {user_id} from level {current_level} to {calculated_level}")
 
             self.conn.commit()
-            logging.debug(f"Checked and updated levels for {len(user_data)} users")
 
         except mariadb.Error as e:
             logging.error(f"Error updating ranks: {e}")

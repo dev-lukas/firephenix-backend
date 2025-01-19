@@ -47,7 +47,9 @@ class TeamspeakBot:
         clients = ts3conn.exec_("clientlist")
         for client in clients:
             if client.get("client_type") == "0":
-                if self.excluded_role_id not in client.get("client_servergroups", "").split(","):
+                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=client["clid"])
+                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+                if self.excluded_role_id not in group_ids:
                     uid, name = self.get_client_data(client["clid"], ts3conn)
                     if uid:
                         self.connected_users.add(uid)
@@ -66,6 +68,33 @@ class TeamspeakBot:
             print(f"Error getting client info: {err}")
             return None
 
+    def update_rank(self, upranked_user):
+        """Update user rank in the Teamspeak server"""
+        try:
+            with self.connect_to_server() as ts3conn:
+                for client_id, rank in upranked_user:
+                    db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
+                    cldbid = db_info.get("cldbid")
+                    groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+                    for group in groups_info:
+                        group_id = int(group.get("sgid", 0))
+                        if group_id in Config.TEAMSPEAK_LEVEL_MAP.values():
+                            ts3conn.exec_("servergroupdelclient", 
+                                        sgid=group_id, 
+                                        cldbid=cldbid)
+                    ts3conn.exec_("servergroupaddclient", 
+                                sgid=int(Config.TEAMSPEAK_LEVEL_MAP[rank]), 
+                                cldbid=cldbid)        
+                    logging.info(f"Updated rank for user {client_id} to rank {rank}")
+
+        except ts3.query.TS3QueryError as err:
+            if "already member" in str(err).lower():
+                logging.warning(f"User {client_id} is already in rank {rank}")
+            else:
+                logging.error(f"TS3 Query Error while updating rank for client {client_id}: {err}")
+        except Exception as e:
+            logging.error(f"Unexpected error while updating rank for client {client_id}: {e}")
+
     def update_time(self):
         """Background thread to update minutes every 60 seconds"""
         logging.info("Teamspeak Time Thread started successfully.")
@@ -77,7 +106,8 @@ class TeamspeakBot:
                 )
             if self.connected_users:
                 self.database.update_times(self.connected_users, "teamspeak")
-                self.database.update_ranks(self.connected_users, "teamspeak")
+                upranked_user = self.database.update_ranks(self.connected_users, "teamspeak")
+                self.update_rank(upranked_user)
             time.sleep(60)
 
     def run(self):
@@ -121,7 +151,9 @@ class TeamspeakBot:
         logging.debug(f"Event: {event['reasonid']}")
         if event["reasonid"] == "0":  # Client connected
             if event.get("client_type") == "0":
-                if self.excluded_role_id not in event.get("client_servergroups", "").split(","):
+                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=client["clid"])
+                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+                if self.excluded_role_id not in group_ids:
                     uid, name = self.get_client_data(event["clid"], ts3conn)
                     if uid:
                         self.connected_users.add(uid)

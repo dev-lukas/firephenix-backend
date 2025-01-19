@@ -13,7 +13,7 @@ def get_ranking():
     
     try:
         page = int(request.args.get('page', 1))
-        limit = int(request.args.get('limit', 10))
+        limit = min(int(request.args.get('limit', 10)), 50)
         search = request.args.get('search', '')
         
         offset = (page - 1) * limit

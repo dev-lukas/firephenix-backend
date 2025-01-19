@@ -65,11 +65,21 @@ class DiscordBot:
 
             self.database = DatabaseManager()
             self.bot = bot
+            self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
             self.connected_users = set()
             self.bg_task = self.bot.loop.create_task(self.scan_voice_channels())
             self.bg_task = self.bot.loop.create_task(self.update_time())
             self.monitor_task = self.bot.loop.create_task(self.monitor_background_tasks())
             logging.info("Discord Bot started successfully.")
+
+        async def set_ranks(self, user_id, level):
+            member = await self.guild.fetch_member(user_id)
+            for role in member.roles:
+                if role.id in Config.DISCORD_LEVEL_MAP.values():
+                    await member.remove_roles(role)
+            rankup = discord.utils.get(member.guild.roles, id=Config.DISCORD_LEVEL_MAP[level])
+            await member.add_roles(rankup)
+            logging.info(f"User {user_id} ranked up to level {level}")
 
         async def update_time(self):
             """Background task that runs every minute to update the time spent in voice chat for each user.
@@ -84,7 +94,10 @@ class DiscordBot:
                         )
                     if self.connected_users:
                         self.database.update_times(self.connected_users, "discord")
-                        self.database.update_ranks(self.connected_users, "discord")
+                        upranked_user = self.database.update_ranks(self.connected_users, "discord")
+                        for user_id, level in upranked_user:
+                            await self.set_ranks(user_id, level)
+                            
                 except Exception as e:
                     logging.error(f"Error updating time: {e}")
                 await asyncio.sleep(60)
@@ -93,12 +106,11 @@ class DiscordBot:
             """Scan all voice channels and add connected users to the set"""
             await self.bot.wait_until_ready()
             
-            for guild in self.bot.guilds:
-                for voice_channel in guild.voice_channels:
-                    for member in voice_channel.members:
-                        if not member.bot:  # Ignore bots
-                            self.connected_users.add(member.id)
-                            self.database.update_user_name(member.id, member.display_name, "discord")
+            for voice_channel in self.guild.voice_channels:
+                for member in voice_channel.members:
+                    if not member.bot:  # Ignore bots
+                        self.connected_users.add(member.id)
+                        self.database.update_user_name(member.id, member.display_name, "discord")
               
             logging.info(f"Initial voice channel scan complete. Found {len(self.connected_users)} users.")
 
