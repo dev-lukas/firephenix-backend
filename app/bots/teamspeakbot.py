@@ -151,7 +151,7 @@ class TeamspeakBot:
         logging.debug(f"Event: {event['reasonid']}")
         if event["reasonid"] == "0":  # Client connected
             if event.get("client_type") == "0":
-                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=client["clid"])
+                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=event["clid"])
                 group_ids = [int(group.get("sgid", 0)) for group in groups_info]
                 if self.excluded_role_id not in group_ids:
                     uid, name = self.get_client_data(event["clid"], ts3conn)
