@@ -156,7 +156,7 @@ class DiscordBot:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
                         self.connected_users.add(member.id)
                         self.database.update_user_name(member.id, member.display_name, "discord")
-                        self.check_rank(member.id)
+                        await self.check_rank(member.id)
 
                 elif before.channel is not None and after.channel is None:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
