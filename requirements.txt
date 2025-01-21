@@ -1,6 +1,7 @@
 python-dotenv
 discord.py
 ts3>=2.0.0b2
+requests>=2.28.0
 mariadb
 flask
 flask-cors

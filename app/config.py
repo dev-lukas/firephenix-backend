@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
+    # Website
+    SECRET_KEY = os.getenv('SECRET_KEY')
+    STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
+    SITE_URL = 'http://localhost:5000'
     # Discord
     DISCORD_TOKEN=os.getenv("DISCORD_TOKEN")
     DISCORD_EXCLUDED_ROLE_ID="12312312312"
