@@ -25,6 +25,8 @@ class Config:
     DB_USER="root"
     DB_NAME="firephenix"
     DB_PASSWORD=os.getenv("DB_PASSWORD")
+    # Limiter
+    LIMITER_STORAGE_URI="memory://"
     # Rankingsystem
     LEVEL_REQUIREMENTS = {
         1: 0,

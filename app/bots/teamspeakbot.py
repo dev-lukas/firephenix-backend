@@ -275,6 +275,27 @@ class TeamspeakBot:
     def get_online_users(self):
         """Return list of currently connected users"""
         return list(self.connected_users)
+    
+    def send_verification(self, user_id, code):
+        """Send verification code to TeamSpeak user"""
+        try:
+            with self.connect_to_server() as ts3conn:
+                db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=user_id)[0]
+                cldbid = db_info.get("cldbid")
+                
+                # Get online clients with matching DBID
+                clients = ts3conn.exec_("clientlist")
+                for client in clients:
+                    if client.get("client_database_id") == cldbid:
+                        ts3conn.exec_("sendtextmessage", 
+                                    targetmode=1, 
+                                    target=client["clid"], 
+                                    msg=f"Dein Verifikations-Code lautet: {code}")
+                        return True
+                return False
+        except ts3.query.TS3QueryError as e:
+            logging.error(f"Error sending verification message: {e}")
+            return False
 
     def stop(self):
         """Gracefully stop the bot"""

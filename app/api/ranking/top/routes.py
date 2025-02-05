@@ -32,7 +32,7 @@ def get_top_ranking():
         """
         
         result = db.execute_query(query)
-        
+        db.close()
         top_players = [
             {
                 'id': row[0],

@@ -2,22 +2,13 @@
 from flask import Blueprint, request, redirect, session, jsonify
 import requests
 from urllib.parse import urlencode
-from functools import wraps
 from app.config import Config
-from app.utils.security import rate_limit
+from app.utils.security import limiter
 
 auth_bp = Blueprint('/api/auth', __name__)
 
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'steam_id' not in session:
-            return jsonify({'error': 'Unauthorized'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
 @auth_bp.route('/api/auth')
-@rate_limit(max_requests=5, window=60)
+@limiter.limit("3 per minute")
 def steam_login():
     params = {
         'openid.ns': 'http://specs.openid.net/auth/2.0',
@@ -61,10 +52,14 @@ def steam_callback():
 @auth_bp.route('/api/auth/check')
 def check_auth():
     """Check if user is authenticated"""
-    return jsonify({
+    response = jsonify({
         'authenticated': 'steam_id' in session,
         'steam_id': session.get('steam_id')
     })
+
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 @auth_bp.route('/api/auth/logout')
 def logout():

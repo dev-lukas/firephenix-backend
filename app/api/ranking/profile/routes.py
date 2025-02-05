@@ -40,7 +40,7 @@ def get_ranking():
         
         db.cursor.execute(query, (user_id,))
         user_data = db.cursor.fetchone()
-        
+        db.close()
         if not user_data:
             return jsonify({'error': 'User not found'}), 404
 

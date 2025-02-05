@@ -56,10 +56,11 @@ def get_ranking():
         total_count = db.execute_query(count_query, params[:-2] if search else None)[0][0]
         result = db.execute_query(query, params)
         current_time = datetime.now()
-        
+        db.close()
+
         players = []
         for row in result:
-            if row[7] in online_users or row[8] in online_users:
+            if int(row[7]) in online_users or row[8] in online_users:
                 last_online = "Online"
             else:
                 time_diff = current_time - row[5] 

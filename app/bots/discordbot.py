@@ -57,6 +57,22 @@ class DiscordBot:
         if self.time_tracker:
             return list(self.time_tracker.connected_users)
         return []
+    
+    async def send_verification(self, user_id, code):
+        """Send verification code to Discord user"""
+        try:
+            user = await self.bot.fetch_user(user_id)
+            await user.send(f"Dein Verifikations-Code lautet: {code}")
+            return True
+        except discord.Forbidden:
+            logging.error(f"No DMs possible for {user_id}")
+            return False
+        except discord.NotFound:
+            logging.error(f"User {user_id} not found")
+            return False
+        except Exception as e:
+            logging.error(f"Error sending verification message: {e}")
+            return False
 
     class TimeTracker(commands.Cog):
 

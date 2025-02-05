@@ -16,7 +16,7 @@ class DatabaseManager:
                 port=int(Config.DB_PORT),
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
-                database=Config.DB_NAME
+                database=Config.DB_NAME,
             )
             self.conn.autocommit = False
             self.cursor = self.conn.cursor()
@@ -30,8 +30,9 @@ class DatabaseManager:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user_time (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    discord_uid BIGINT UNIQUE,
-                    teamspeak_uid VARCHAR(128) UNIQUE,
+                    discord_uid VARCHAR(255) UNIQUE,
+                    teamspeak_uid VARCHAR(255) UNIQUE,
+                    steam_id BIGINT,
                     name VARCHAR(255),
                     level INT DEFAULT 1,
                     division INT DEFAULT 1,
@@ -52,6 +53,19 @@ class DatabaseManager:
                     platform ENUM('discord', 'teamspeak') NOT NULL,
                     INDEX idx_timestamp (timestamp),
                     INDEX idx_platform (platform)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS verification (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    steam_id BIGINT NOT NULL,
+                    platform_id VARCHAR(255) NOT NULL,
+                    platform ENUM('discord', 'teamspeak') NOT NULL,
+                    verification_code VARCHAR(6) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL,
+                    INDEX idx_user_platform (steam_id, platform),
+                    INDEX idx_expires (expires_at)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
             self.conn.commit()

@@ -25,7 +25,7 @@ def get_usage():
         """
 
         result = db.execute_query(query, (hours,))
-
+        db.close()
         stats = {
             'labels': [stat[0].strftime('%H' if period == 'daily' else '%a %H') 
                       for stat in result],
