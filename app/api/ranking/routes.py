@@ -60,7 +60,9 @@ def get_ranking():
 
         players = []
         for row in result:
-            if int(row[7]) in online_users or row[8] in online_users:
+            if row[7] and int(row[7]) in online_users:
+                last_online = "Online"
+            elif row[8] in online_users:
                 last_online = "Online"
             else:
                 time_diff = current_time - row[5] 
