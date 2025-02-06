@@ -15,7 +15,8 @@ def get_connected_users():
     db = DatabaseManager()
 
     query = """
-        SELECT name, discord_uid, teamspeak_uid, division, 
+        SELECT name, discord_uid, teamspeak_uid, level,
+               division, discord_channel, teamspeak_channel,
                total_time, daily_time, weekly_time, monthly_time
         FROM user_time 
         WHERE steam_id = ?
@@ -29,7 +30,10 @@ def get_connected_users():
             'name': None,
             'discord_uid': None,
             'teamspeak_uid': None,
+            'level': 0,
             'division': None,
+            'discord_channel': None,
+            'teamspeak_channel': None,
             'total_time': 0,
             'daily_time': 0,
             'weekly_time': 0,
@@ -41,11 +45,14 @@ def get_connected_users():
             'name': row[0],
             'discord_uid': str(row[1]),
             'teamspeak_uid': str(row[2]),
-            'division': row[3],
-            'total_time': row[4],
-            'daily_time': row[5],
-            'weekly_time': row[6],
-            'monthly_time': row[7]
+            'level': row[3],
+            'division': row[4],
+            'discord_channel': row[5],
+            'teamspeak_channel': row[6],
+            'total_time': row[7],
+            'daily_time': row[8],
+            'weekly_time': row[9],
+            'monthly_time': row[10]
         })
 
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"

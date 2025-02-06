@@ -58,7 +58,7 @@ class DiscordBot:
             return list(self.time_tracker.connected_users)
         return []
     
-    async def send_verification(self, user_id, code):
+    async def send_verification(self, user_id, code) -> bool:
         """Send verification code to Discord user"""
         try:
             user = await self.bot.fetch_user(user_id)
@@ -73,6 +73,50 @@ class DiscordBot:
         except Exception as e:
             logging.error(f"Error sending verification message: {e}")
             return False
+        
+    async def create_owned_channel(self, user_id: int, channel_name: str) -> int:
+        """
+        Creates a permanent voice channel with owner permissions under configured parent
+        """
+        try:
+            guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
+            if not guild:
+                logging.error("Guild not found")
+                return None
+
+            try:
+                member = await guild.fetch_member(user_id)
+            except discord.NotFound:
+                logging.error(f"User {user_id} not found in guild")
+                return None
+
+            parent = guild.get_channel(Config.DISCORD_PARENT_CHANNEL)
+            if not parent:
+                logging.error(f"Parent channel {Config.DISCORD_PARENT_CHANNEL} not found")
+                return None
+
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(
+                    view_channel=True,
+                    connect=False
+                ),
+                member: discord.PermissionOverwrite(
+                    connect=True,
+                    manage_channels=True,
+                    manage_permissions=True,
+                    move_members=True
+                )
+            }
+
+            channel = await guild.create_voice_channel(
+                name=channel_name,
+                category=parent,
+                overwrites=overwrites
+            )
+            return channel.id
+        except Exception as e:
+            logging.error(f"Error creating permanent channel: {e}")
+            return None
 
     class TimeTracker(commands.Cog):
 

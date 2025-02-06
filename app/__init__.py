@@ -16,6 +16,7 @@ from app.api.ranking.profile.routes import ranking_profile_bp
 from app.api.user.routes import user_bp
 from app.api.user.online.routes import user_online_bp
 from app.api.profile.verification.routes import profile_verification_bp
+from app.api.profile.channel.routes import profile_channel_bp
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -66,6 +67,7 @@ def create_app():
     app.register_blueprint(ranking_top_bp)
     app.register_blueprint(ranking_profile_bp)
     app.register_blueprint(profile_verification_bp)
+    app.register_blueprint(profile_channel_bp)
 
     logging.info("Flask App started successfully. System ready.")
 

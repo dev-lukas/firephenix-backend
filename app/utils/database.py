@@ -36,6 +36,8 @@ class DatabaseManager:
                     name VARCHAR(255),
                     level INT DEFAULT 1,
                     division INT DEFAULT 1,
+                    discord_channel BIGINT,
+                    teamspeak_channel BIGINT,
                     total_time INT DEFAULT 0,
                     daily_time INT DEFAULT 0,
                     weekly_time INT DEFAULT 0,
