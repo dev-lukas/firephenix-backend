@@ -41,23 +41,67 @@ def get_ranking():
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
         WHERE u.id = ?
         """
+
+        heatmap_query = """
+        SELECT 
+            h.day_of_week,
+            h.time_category,
+            SUM(h.activity_minutes) as total_minutes
+        FROM user u
+        LEFT JOIN (
+            SELECT 
+                day_of_week,
+                time_category,
+                platform_uid,
+                platform,
+                activity_minutes
+            FROM activity_heatmap
+            WHERE platform IN ('discord', 'teamspeak')
+        ) h ON (h.platform = 'discord' AND h.platform_uid = u.discord_id)
+                OR (h.platform = 'teamspeak' AND h.platform_uid = u.teamspeak_id)
+        WHERE u.id = ?
+            AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
+        GROUP BY h.day_of_week, h.time_category
+        ORDER BY h.day_of_week, 
+            CASE h.time_category 
+                WHEN 'morning' THEN 1 
+                WHEN 'noon' THEN 2 
+                WHEN 'evening' THEN 3 
+                WHEN 'night' THEN 4 
+            END
+        """
         
         db.cursor.execute(query, (user_id,))
         user_data = db.cursor.fetchone()
-        db.close()
+
         if not user_data:
+            db.close()
             return jsonify({'error': 'User not found'}), 404
 
-        # Extract user data
         id, rank, name, level, division, total_time, monthly_time, weekly_time, total_users, mean_time, best_time = user_data
         
-        # Calculate time to next level
+        db.cursor.execute(heatmap_query, (user_id,))
+        heatmap_data = db.cursor.fetchall()
+        
+        heatmap = {
+            day: {
+                time_cat: 0 
+                for time_cat in ['morning', 'noon', 'evening', 'night']
+            } 
+            for day in range(7)
+        }
+        
+        for row in heatmap_data:
+            if row[0] is not None and row[1] is not None:
+                heatmap[row[0]][row[1]] = row[2]
+        
+        db.close()
+
         time_to_next = 0
-        if level < 25:  # Max level is 25
+        if level < 25:
             next_level_req = Config.get_level_requirement(level + 1)
             time_to_next = max(0, next_level_req - total_time)
         
-        # Calculate rank percentage (top percentage)
         rank_percentage = (rank / total_users) * 100 if total_users > 0 else 0
         
         return jsonify({
@@ -72,7 +116,10 @@ def get_ranking():
             'time_to_next_level': time_to_next,
             'rank_percentage': rank_percentage,
             'mean_total_time': mean_time,
-            'best_player_time': best_time
+            'best_player_time': best_time,
+            'activity_heatmap': {
+                'data': heatmap
+            }
         })
     
     except Exception as e:

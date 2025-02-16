@@ -173,6 +173,7 @@ class DiscordBot:
                         )
                     if self.connected_users:
                         self.database.update_times(self.connected_users, "discord")
+                        self.database.update_heatmap(self.connected_users, "discord")
                         upranked_user = self.database.update_ranks(self.connected_users, "discord")
                         for user_id, level in upranked_user:
                             await self.set_ranks(user_id, level)

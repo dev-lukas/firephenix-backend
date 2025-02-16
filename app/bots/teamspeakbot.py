@@ -184,6 +184,7 @@ class TeamspeakBot:
                 
             if self.connected_users:
                 self.database.update_times(self.connected_users, "teamspeak")
+                self.database.update_heatmap(self.connected_users, "teamspeak")
                 upranked_users = self.database.update_ranks(
                     self.connected_users, 
                     "teamspeak"

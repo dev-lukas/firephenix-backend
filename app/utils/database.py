@@ -166,10 +166,10 @@ class DatabaseManager:
             return 'noon'
         elif 18 <= hour < 24:
             return 'evening'
-        else:  # 0-5
+        else:
             return 'night'
             
-    def update_heatmap(self, platform: str, platform_uids: Set[Union[int, str]]):
+    def update_heatmap(self, platform_uids: Set[Union[int, str]], platform: str):
         """
         Update the activity heatmap for multiple platform UIDs
         
@@ -185,12 +185,16 @@ class DatabaseManager:
         time_category = self.get_time_category(now.hour)
         
         try:
-            values = [(platform, str(uid), day_of_week, time_category)
-                    for uid in platform_uids]
+            values = []
+            for uid in platform_uids:
+                values.append((str(uid), platform, day_of_week, time_category))
             
+            if not values:
+                return
+                
             self.cursor.executemany("""
                 INSERT INTO activity_heatmap 
-                    (platform, platform_uid, day_of_week, time_category, activity_minutes)
+                    (platform_uid, platform, day_of_week, time_category, activity_minutes)
                 VALUES (?, ?, ?, ?, 1)
                 ON DUPLICATE KEY UPDATE
                     activity_minutes = activity_minutes + 1,
