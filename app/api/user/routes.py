@@ -15,11 +15,20 @@ def get_connected_users():
     db = DatabaseManager()
 
     query = """
-        SELECT name, discord_uid, teamspeak_uid, level,
-               division, discord_channel, teamspeak_channel,
-               total_time, daily_time, weekly_time, monthly_time
-        FROM user_time 
-        WHERE steam_id = ?
+        SELECT 
+            u.name, u.discord_id, u.teamspeak_id, u.level,
+            u.division, u.discord_channel, u.teamspeak_channel,
+            COALESCE(SUM(t.total_time), 0) as total_time,
+            COALESCE(SUM(t.daily_time), 0) as daily_time,
+            COALESCE(SUM(t.weekly_time), 0) as weekly_time,
+            COALESCE(SUM(t.monthly_time), 0) as monthly_time
+        FROM user u
+        LEFT JOIN time t ON 
+            (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
+            (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
+        WHERE u.steam_id = ?
+        GROUP BY u.id, u.name, u.discord_id, u.teamspeak_id, u.level,
+                 u.division, u.discord_channel, u.teamspeak_channel
     """
 
     results = db.execute_query(query, (steam_id,))
@@ -28,8 +37,8 @@ def get_connected_users():
     if not results:
         response = jsonify({
             'name': None,
-            'discord_uid': None,
-            'teamspeak_uid': None,
+            'discord_id': None,
+            'teamspeak_id': None,
             'level': 0,
             'division': None,
             'discord_channel': None,
@@ -43,8 +52,8 @@ def get_connected_users():
         row = results[0]
         response = jsonify({
             'name': row[0],
-            'discord_uid': str(row[1]),
-            'teamspeak_uid': str(row[2]),
+            'discord_id': str(row[1]),
+            'teamspeak_id': str(row[2]),
             'level': row[3],
             'division': row[4],
             'discord_channel': row[5],

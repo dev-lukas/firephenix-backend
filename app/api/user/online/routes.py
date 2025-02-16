@@ -16,7 +16,7 @@ def get_connected_users():
     bot = DiscordBot() if platform == 'discord' else TeamspeakBot()
     online_users = bot.get_online_users()
     
-    id_column = 'discord_uid' if platform == 'discord' else 'teamspeak_uid'
+    id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
     placeholders = ','.join(['?'] * len(online_users))
     
     if not online_users:
@@ -24,7 +24,7 @@ def get_connected_users():
     
     query = f"""
         SELECT {id_column}, name 
-        FROM user_time 
+        FROM user
         WHERE {id_column} IN ({placeholders})
     """
     

@@ -1,7 +1,7 @@
 import asyncio
 import time
 import discord
-from datetime import datetime
+from datetime import datetime, timedelta
 from discord.ext import commands
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
@@ -160,6 +160,12 @@ class DiscordBot:
             await self.bot.wait_until_ready()
             while not self.bot.is_closed():
                 try:
+                    now = datetime.now()
+                    next_minute = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
+                    delay = (next_minute - now).total_seconds()
+                    
+                    await asyncio.sleep(max(0, delay))
+
                     if datetime.now().minute == 0:
                         self.database.log_usage_stats(
                             user_count=len(self.connected_users),
@@ -173,7 +179,6 @@ class DiscordBot:
                             
                 except Exception as e:
                     logging.error(f"Error updating time: {e}")
-                await asyncio.sleep(60)
 
         async def scan_voice_channels(self):
             """Scan all voice channels and add connected users to the set"""

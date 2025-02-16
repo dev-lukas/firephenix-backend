@@ -1,7 +1,7 @@
 import threading
 import ts3
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
 from app.config import Config
@@ -19,7 +19,7 @@ class TeamspeakBot:
     MAX_RECONNECT_DELAY = 300
     BANNED_WAIT_TIME = 300
     KEEPALIVE_TIMEOUT = 240
-    UPDATE_INTERVAL = 60
+    UPDATE_INTERVAL = 1
 
     def __new__(cls):
         if cls._instance is None:
@@ -171,6 +171,11 @@ class TeamspeakBot:
         logging.info("Teamspeak Time Thread started successfully.")
         
         while self.running:
+            now = datetime.now()
+            next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=self.UPDATE_INTERVAL)
+            sleep_duration = (next_run - now).total_seconds()
+            time.sleep(max(0, sleep_duration))
+
             if datetime.now().minute == 0:
                 self.database.log_usage_stats(
                     user_count=len(self.connected_users),
@@ -184,8 +189,6 @@ class TeamspeakBot:
                     "teamspeak"
                 )
                 self.update_rank(upranked_users)
-                
-            time.sleep(self.UPDATE_INTERVAL)
 
     def handle_event(self, event, ts3conn):
         """

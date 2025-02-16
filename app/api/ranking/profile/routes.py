@@ -16,26 +16,30 @@ def get_ranking():
         query = """
         WITH user_stats AS (
             SELECT 
-                COUNT(*) as total_users,
-                AVG(total_time) as mean_time,
-                MAX(total_time) as best_time
-            FROM user_time
-            WHERE total_time > 0
+                COUNT(DISTINCT u.id) as total_users,
+                AVG(COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0)) as mean_time,
+                MAX(COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0)) as best_time
+            FROM user u
+            LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
+            LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
+            WHERE COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) > 0
         )
         SELECT 
-            id,
-            RANK() OVER (ORDER BY total_time DESC) as rank,
-            COALESCE(name, 'Unknown') as name,
-            COALESCE(level, 1) as level,
-            COALESCE(division, 1) as division,
-            total_time,
-            monthly_time,
-            weekly_time,
+            u.id,
+            RANK() OVER (ORDER BY (COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0)) DESC) as rank,
+            COALESCE(u.name, 'Unknown') as name,
+            COALESCE(u.level, 1) as level,
+            COALESCE(u.division, 1) as division,
+            COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) as total_time,
+            COALESCE(d.monthly_time, 0) + COALESCE(t.monthly_time, 0) as monthly_time,
+            COALESCE(d.weekly_time, 0) + COALESCE(t.weekly_time, 0) as weekly_time,
             (SELECT total_users FROM user_stats) as total_users,
             (SELECT mean_time FROM user_stats) as mean_time,
             (SELECT best_time FROM user_stats) as best_time
-        FROM user_time
-        WHERE id = ?
+        FROM user u
+        LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
+        LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
+        WHERE u.id = ?
         """
         
         db.cursor.execute(query, (user_id,))

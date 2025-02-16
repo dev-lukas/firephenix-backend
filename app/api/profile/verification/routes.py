@@ -32,7 +32,7 @@ def initiate_verification():
     
     db = DatabaseManager()
     existing = db.execute_query(
-        f"SELECT steam_id FROM user_time WHERE {platform}_uid = ? AND steam_id IS NOT NULL",
+        f"SELECT steam_id FROM user WHERE {platform}_id = ? AND steam_id IS NOT NULL",
         (platform_id,)
     )
 
@@ -97,68 +97,41 @@ def verify_code():
         WHERE steam_id = ?
     """, (steam_id,))
     
-    # Link accounts
     try:
         db.execute_query("START TRANSACTION")
-        duplicate_data = db.execute_query(f"""
-            SELECT 
-                discord_uid,
-                teamspeak_uid,
-                total_time,
-                daily_time,
-                weekly_time,
-                monthly_time
-            FROM user_time
-            WHERE (steam_id = ? OR {platform}_uid = ?)
-            AND id != (
-                SELECT MIN(id) 
-                FROM user_time 
-                WHERE steam_id = ? OR {platform}_uid = ?
-            )
-        """, (steam_id, platform_id, steam_id, platform_id))
-        db.execute_query(f"""
-            DELETE FROM user_time
-            WHERE (steam_id = ? OR {platform}_uid = ?)
-            AND id != (
-                SELECT MIN(id) 
-                FROM user_time 
-                WHERE steam_id = ? OR {platform}_uid = ?
-            )
-        """, (steam_id, platform_id, steam_id, platform_id))
+        
+        existing_users = db.execute_query(f"""
+            SELECT id, steam_id, discord_id, teamspeak_id, name, level, division
+            FROM user
+            WHERE steam_id = ?
+        """, (steam_id,))
 
-        if duplicate_data:
-            (discord_uid, teamspeak_uid, 
-             total_t, daily_t, weekly_t, monthly_t) = duplicate_data[0]
-
+        if not existing_users:
             db.execute_query(f"""
-                UPDATE user_time
-                SET
-                    {platform}_uid = ?,
-                    steam_id = ?,
-                    discord_uid = COALESCE(discord_uid, ?),
-                    teamspeak_uid = COALESCE(teamspeak_uid, ?),
-                    total_time = total_time + ?,
-                    daily_time = daily_time + ?,
-                    weekly_time = weekly_time + ?,
-                    monthly_time = monthly_time + ?
-                WHERE id = (
-                    SELECT MIN(id) 
-                    FROM user_time 
-                    WHERE steam_id = ? OR {platform}_uid = ?
-                )
-            """, (platform_id, steam_id,
-                  discord_uid, teamspeak_uid,
-                  total_t, daily_t, weekly_t, monthly_t,
-                  steam_id, platform_id))
-        else:
-            db.execute_query(f"""
-                UPDATE user_time
-                SET steam_id = ? 
-                WHERE {platform}_uid = ?
+                UPDATE user 
+                SET steam_id = ?
+                WHERE {platform}_id = ?
             """, (steam_id, platform_id))
+        
+        else:
+            primary_user = min(existing_users, key=lambda x: x[0])
+            primary_id = primary_user[0]
+            
+            db.execute_query(f"""
+                DELETE FROM user
+                WHERE id != ? AND {platform}_id = ?
+            """, (primary_id, platform_id))
+            
+            db.execute_query(f"""
+                UPDATE user
+                SET steam_id = ?,
+                    {platform}_id = ?
+                WHERE id = ?
+            """, (steam_id, platform_id, primary_id))
 
         db.execute_query("COMMIT")
         db.close()
+        
     except Exception as e:
         db.execute_query("ROLLBACK")
         db.close()

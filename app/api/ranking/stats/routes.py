@@ -15,10 +15,20 @@ def get_stats():
         db = DatabaseManager()
         query = """
         SELECT 
-            COUNT(*) as total_users,
-            COALESCE(SUM(total_time), 0) as total_time
-        FROM user_time
+            COUNT(DISTINCT user.id) as total_users,
+            COALESCE(SUM(discord_time.total_time), 0) + 
+            COALESCE(SUM(teamspeak_time.total_time), 0) as total_time
+        FROM user
+        LEFT JOIN time AS discord_time 
+            ON user.discord_id = discord_time.platform_uid 
+            AND discord_time.platform = 'discord'
+        LEFT JOIN time AS teamspeak_time 
+            ON user.teamspeak_id = teamspeak_time.platform_uid 
+            AND teamspeak_time.platform = 'teamspeak'
+        WHERE discord_time.platform_uid IS NOT NULL 
+           OR teamspeak_time.platform_uid IS NOT NULL
         """
+        
         result = db.execute_query(query)
         if result and result[0]:
             total_users, total_time = result[0]

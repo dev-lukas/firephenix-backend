@@ -21,8 +21,8 @@ def create_channel():
         return jsonify({'error': 'Invalid platform'}), 400
     
     db = DatabaseManager()
-    query = f"""SELECT level, name, discord_uid, teamspeak_uid, {platform}_channel
-    FROM user_time
+    query = f"""SELECT level, name, discord_id, teamspeak_id, {platform}_channel
+    FROM user
     WHERE steam_id = ? AND steam_id IS NOT NULL
     """
 
@@ -32,7 +32,7 @@ def create_channel():
         return jsonify({'error': 'This account has not yet linked his steamid with an account'}), 404
 
     # Extract user data
-    level, name, discord_uid, teamspeak_uid, platform_channel = user_data
+    level, name, discord_id, teamspeak_id, platform_channel = user_data
     
     if platform_channel:
         return jsonify({'error': 'This account already has a channel on this plattform'}), 400
@@ -40,7 +40,7 @@ def create_channel():
         return jsonify({
             'error': 'This account has not reached level 20'
         }), 400
-    if platform == 'discord' and discord_uid is None or platform == 'teamspeak' and teamspeak_uid is None:
+    if platform == 'discord' and discord_id is None or platform == 'teamspeak' and teamspeak_id is None:
         return jsonify({
             'error': 'This account has not yet linked the needed account'
         }), 400
@@ -48,7 +48,7 @@ def create_channel():
     if platform == 'discord':
         bot = DiscordBot()
         future = asyncio.run_coroutine_threadsafe(
-            bot.create_owned_channel(discord_uid, f"{name}'s Channel"), bot.bot.loop
+            bot.create_owned_channel(discord_id, f"{name}'s Channel"), bot.bot.loop
         )
         try:
             channel_id = future.result(timeout=300)
@@ -56,13 +56,13 @@ def create_channel():
             return jsonify({'error': 'Error creating channel'}), 500
     else:
         bot = TeamspeakBot()
-        channel_id = bot.create_owned_channel(teamspeak_uid, f"{name}'s Channel")
+        channel_id = bot.create_owned_channel(teamspeak_id, f"{name}'s Channel")
 
     if not channel_id:
         return jsonify({'error': 'Error creating channel'}), 500
 
     db.execute_query(f"""
-        UPDATE user_time
+        UPDATE user
         SET {platform}_channel = ?
         WHERE steam_id = ?
     """, (channel_id, steam_id,))
