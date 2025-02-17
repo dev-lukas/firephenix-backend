@@ -22,6 +22,10 @@ DB_PASSWORD= # Your MariaDB password
 SECRET_KEY= # Your randomized cookie secret key
 ```
 
+## Configuration
+The app is configured through the Config class in `app/config.py`.
+Values like the database name, discord server id, teamspeak ports and more are configured here.
+
 ## Usage
 Run the app with  
 `flask run`  
