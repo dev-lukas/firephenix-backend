@@ -80,7 +80,10 @@ def get_ranking():
             elif row[8] in online_users:
                 last_online = "Online"
             else:
-                time_diff = current_time - row[5] 
+                date_string = row[5]
+                date_object = datetime.strptime(date_string, '%Y-%m-%d %H:%M:%S')
+                time_diff = current_time - date_object
+
                 if time_diff.days > 0:
                     last_online = f"vor {time_diff.days} Tagen"
                     if time_diff.days == 1:
