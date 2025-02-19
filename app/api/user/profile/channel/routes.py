@@ -5,9 +5,9 @@ from app.utils.security import limiter, login_required
 from app.bots.discordbot import DiscordBot
 from app.bots.teamspeakbot import TeamspeakBot
 
-profile_channel_bp = Blueprint('/api/profile/channel', __name__)
+user_profile_channel_bp = Blueprint('/api/user/profile/channel', __name__)
 
-@profile_channel_bp.route('/api/profile/channel', methods=['POST'])
+@user_profile_channel_bp.route('/api/user/profile/channel', methods=['POST'])
 @login_required
 @limiter.limit("3 per 10 minutes")
 def create_channel():

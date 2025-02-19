@@ -5,9 +5,9 @@ from app.utils.security import limiter, login_required, generate_verification_co
 from app.bots.discordbot import DiscordBot
 from app.bots.teamspeakbot import TeamspeakBot
 
-profile_verification_bp = Blueprint('/api/profile/verification/', __name__)
+user_profile_verification_bp = Blueprint('/api/user/profile/verification/', __name__)
 
-@profile_verification_bp.route('/api/profile/verification/initiate', methods=['POST'])
+@user_profile_verification_bp.route('/api/user/profile/verification/initiate', methods=['POST'])
 @login_required
 @limiter.limit("3 per 10 minutes")
 def initiate_verification():
@@ -65,7 +65,7 @@ def initiate_verification():
 
     return jsonify({'message': 'Verification code sent'})
 
-@profile_verification_bp.route('/api/profile/verification/verify', methods=['POST'])
+@user_profile_verification_bp.route('/api/user/profile/verification/verify', methods=['POST'])
 @login_required
 @limiter.limit("3 per minute")
 def verify_code():
