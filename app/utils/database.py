@@ -96,6 +96,17 @@ class DatabaseManager:
                     INDEX idx_expires (expires_at)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS login_streak (
+                    platform_uid VARCHAR(255) NOT NULL,
+                    platform ENUM('discord', 'teamspeak') NOT NULL,
+                    current_streak INT DEFAULT 1,
+                    longest_streak INT DEFAULT 1,
+                    last_login DATE NOT NULL,
+                    PRIMARY KEY (platform, platform_uid)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
             self.conn.commit()
         except mariadb.Error as e:
             logging.error(f"Error creating tables: {e}")
@@ -305,6 +316,61 @@ class DatabaseManager:
         except mariadb.Error as e:
             logging.error(f"Rank fetch failed for {platform} {user_id}: {e}")
             return None
+
+    def update_login_streak(self, platform_uid: str, platform: str) -> Tuple[int, int]:
+        """
+        Update login streak for a user. Returns tuple of (current_streak, longest_streak)
+        """
+        try:
+            # Get current streak info
+            self.cursor.execute("""
+                SELECT current_streak, longest_streak, last_login 
+                FROM login_streak 
+                WHERE platform = ? AND platform_uid = ?
+            """, (platform, str(platform_uid)))
+            
+            result = self.cursor.fetchone()
+            today = datetime.now().date()
+            
+            if not result:
+                # First time login
+                self.cursor.execute("""
+                    INSERT INTO login_streak 
+                    (platform_uid, platform, current_streak, longest_streak, last_login)
+                    VALUES (?, ?, 1, 1, ?)
+                """, (str(platform_uid), platform, today))
+                self.conn.commit()
+                return (1, 1)
+                
+            current_streak, longest_streak, last_login = result
+            
+            if last_login == today:
+                # Already logged in today
+                return (current_streak, longest_streak)
+                
+            if (today - last_login).days == 1:
+                # Consecutive day login
+                current_streak += 1
+                longest_streak = max(longest_streak, current_streak)
+            else:
+                # Streak broken
+                current_streak = 1
+                
+            self.cursor.execute("""
+                UPDATE login_streak 
+                SET current_streak = ?,
+                    longest_streak = ?,
+                    last_login = ?
+                WHERE platform = ? AND platform_uid = ?
+            """, (current_streak, longest_streak, today, platform, str(platform_uid)))
+            
+            self.conn.commit()
+            return (current_streak, longest_streak)
+            
+        except mariadb.Error as e:
+            logging.error(f"Error updating login streak: {e}")
+            self.conn.rollback()
+            return (0, 0)
 
     def close(self) -> None:
         """Close database connection"""

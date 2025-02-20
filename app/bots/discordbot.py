@@ -190,6 +190,7 @@ class DiscordBot:
                     if not member.bot:  # Ignore bots
                         self.connected_users.add(member.id)
                         self.database.update_user_name(member.id, member.display_name, "discord")
+                        self.database.update_login_streak(str(member.id), "discord")
               
             logging.info(f"Initial voice channel scan complete. Found {len(self.connected_users)} users.")
 
@@ -222,6 +223,7 @@ class DiscordBot:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
                         self.connected_users.add(member.id)
                         self.database.update_user_name(member.id, member.display_name, "discord")
+                        self.database.update_login_streak(member.id, "discord")
                         await self.check_rank(member.id)
 
                 elif before.channel is not None and after.channel is None:

@@ -107,6 +107,7 @@ class TeamspeakBot:
                 self.connected_users.add(uid)
                 self.client_uid_map[client["clid"]] = uid
                 self.database.update_user_name(uid, name, "teamspeak")
+                self.database.update_login_streak(uid, "teamspeak")
 
     def check_rank(self, uid, ts3conn):
         """Check if user rank needs to be updated
@@ -226,6 +227,7 @@ class TeamspeakBot:
             self.connected_users.add(uid)
             self.client_uid_map[event["clid"]] = uid
             self.database.update_user_name(uid, name, "teamspeak")
+            self.database.update_login_streak(uid, "teamspeak")
             logging.debug("User connected: %s", uid)
             self.check_rank(uid, ts3conn)
 

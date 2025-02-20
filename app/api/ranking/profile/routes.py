@@ -33,6 +33,8 @@ def get_ranking():
             COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) as total_time,
             COALESCE(d.monthly_time, 0) + COALESCE(t.monthly_time, 0) as monthly_time,
             COALESCE(d.weekly_time, 0) + COALESCE(t.weekly_time, 0) as weekly_time,
+            u.discord_id,
+            u.teamspeak_id,
             (SELECT total_users FROM user_stats) as total_users,
             (SELECT mean_time FROM user_stats) as mean_time,
             (SELECT best_time FROM user_stats) as best_time
@@ -41,6 +43,40 @@ def get_ranking():
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
         WHERE u.id = ?
         """
+
+        streak_query = """
+        SELECT 
+            platform,
+            current_streak,
+            longest_streak
+        FROM login_streak
+        WHERE (platform = 'discord' AND platform_uid = ?)
+           OR (platform = 'teamspeak' AND platform_uid = ?)
+        """
+
+        db.cursor.execute(query, (user_id,))
+        user_data = db.cursor.fetchone()
+
+        if not user_data:
+            db.close()
+            return jsonify({'error': 'User not found'}), 404
+
+        (id, rank, name, level, division, total_time, monthly_time, weekly_time, 
+         discord_id, teamspeak_id, total_users, mean_time, best_time) = user_data
+
+        db.cursor.execute(streak_query, (discord_id, teamspeak_id))
+        streak_data = db.cursor.fetchall()
+        
+        streaks = {
+            'discord': {'current': 0, 'longest': 0},
+            'teamspeak': {'current': 0, 'longest': 0}
+        }
+        
+        for platform, current, longest in streak_data:
+            streaks[platform] = {
+                'current': current,
+                'longest': longest
+            }
 
         heatmap_query = """
         SELECT 
@@ -70,15 +106,6 @@ def get_ranking():
                 WHEN 'night' THEN 4 
             END
         """
-        
-        db.cursor.execute(query, (user_id,))
-        user_data = db.cursor.fetchone()
-
-        if not user_data:
-            db.close()
-            return jsonify({'error': 'User not found'}), 404
-
-        id, rank, name, level, division, total_time, monthly_time, weekly_time, total_users, mean_time, best_time = user_data
         
         db.cursor.execute(heatmap_query, (user_id,))
         heatmap_data = db.cursor.fetchall()
@@ -119,7 +146,8 @@ def get_ranking():
             'best_player_time': best_time,
             'activity_heatmap': {
                 'data': heatmap
-            }
+            },
+            'login_streaks': streaks
         })
     
     except Exception as e:
