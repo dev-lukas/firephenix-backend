@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request, session
+from app.config import Config
 from app.utils.database import DatabaseManager
 from app.utils.security import login_required
 
@@ -140,6 +141,11 @@ def get_connected_users():
                     'longest': longest
                 }
 
+        time_to_next = 0
+        if user_data[3] < 25:
+            next_level_req = Config.get_level_requirement(user_data[3] + 1)
+            time_to_next = max(0, next_level_req - user_data[7])
+
         response = jsonify({
             'name': user_data[0],
             'discord_id': discord_id,
@@ -148,10 +154,11 @@ def get_connected_users():
             'division': user_data[4],
             'discord_channel': user_data[5],
             'teamspeak_channel': user_data[6],
-            'total_time': user_data[7],
-            'daily_time': user_data[8],
-            'weekly_time': user_data[9],
-            'monthly_time': user_data[10],
+            'total_time': int(user_data[7]),
+            'daily_time': int(user_data[8]),
+            'weekly_time': int(user_data[9]),
+            'monthly_time': int(user_data[10]),
+            'time_to_next_level': time_to_next,
             'activity_heatmap': {
                 'data': heatmap
             },
