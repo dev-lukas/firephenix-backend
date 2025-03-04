@@ -116,7 +116,7 @@ def get_connected_users():
         
         for heatmap_row in heatmap_data:
             if heatmap_row[0] is not None and heatmap_row[1] is not None:
-                heatmap[heatmap_row[0]][heatmap_row[1]] = heatmap_row[2]
+                heatmap[heatmap_row[0]][heatmap_row[1]] = int(heatmap_row[2])
 
         streak_query = """
         SELECT 
