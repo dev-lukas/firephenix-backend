@@ -51,7 +51,7 @@ def steam_callback():
 
 @auth_bp.route('/api/auth/check')
 def check_auth():
-    """Check if user is authenticated"""
+    """Check if user is authenticated with steam"""
     response = jsonify({
         'authenticated': 'steam_id' in session,
         'steam_id': session.get('steam_id')
