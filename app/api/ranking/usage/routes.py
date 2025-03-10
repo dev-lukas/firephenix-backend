@@ -1,10 +1,12 @@
 from flask import Blueprint, jsonify, request
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
+from app.utils.security import limiter
 
 ranking_usage_bp = Blueprint('ranking_usage', __name__)
 
 @ranking_usage_bp.route('/api/ranking/usage', methods=['GET'])
+@limiter.limit("10 per minute")
 def get_usage():
 
     logging = RankingLogger(__name__).get_logger()

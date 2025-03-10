@@ -3,11 +3,13 @@ from app.utils.logger import RankingLogger
 from app.utils.database import DatabaseManager
 from app.bots.discordbot import DiscordBot
 from app.bots.teamspeakbot import TeamspeakBot
+from app.utils.security import limiter
 from datetime import datetime
 
 ranking_bp = Blueprint('ranking', __name__)
 
 @ranking_bp.route('/api/ranking', methods=['GET'])
+@limiter.limit("10 per minute")
 def get_ranking():
     logging = RankingLogger(__name__).get_logger()
     
