@@ -160,7 +160,7 @@ def get_connected_users():
             'daily_time': int(user_data[8]),
             'weekly_time': int(user_data[9]),
             'monthly_time': int(user_data[10]),
-            'time_to_next_level': time_to_next,
+            'time_to_next_level': int(time_to_next),
             'activity_heatmap': {
                 'data': heatmap
             },
