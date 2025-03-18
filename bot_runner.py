@@ -6,7 +6,6 @@ import redis
 import signal
 import os
 import sys
-from filelock import FileLock, Timeout
 from app.bots.teamspeakbot import TeamspeakBot
 from app.bots.discordbot import DiscordBot
 from app.utils.logger import RankingLogger
@@ -28,39 +27,74 @@ class BotRunner:
         self.pubsub_thread = None
         self.running = True
         
-        # Use the system temp directory instead of the application directory
-        self.lock_file_path =  os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bot_runner.lock')
-        logging.info(f"Lock file path: {self.lock_file_path}")
-        self.lock = FileLock(self.lock_file_path, timeout=1)
+        # Redis-based locking mechanism
+        self.lock_key = "botrunner:lock"
+        self.lock_value = str(os.getpid())  # Using PID as lock value
+        self.lock_expiry = 300  # 5 minutes (in seconds)
+        self.refresh_thread = None
+        logging.info(f"Using Redis key '{self.lock_key}' for single instance lock")
         
     def acquire_lock(self):
-        """Try to acquire a lock file to ensure only one instance runs"""
+        """Try to acquire a Redis lock to ensure only one instance runs"""
         try:
-            logging.info(f"Attempting to acquire lock at {self.lock_file_path}")
-            self.lock.acquire(timeout=0)  # Non-blocking acquire
+            # Try to set the lock key with NX option (only if it doesn't exist)
+            # and set an expiry time for safety in case the process crashes
+            acquired = self.redis.set(
+                self.lock_key, 
+                self.lock_value,
+                nx=True,
+                ex=self.lock_expiry
+            )
             
-            # Write PID to lock file for debugging
-            with open(self.lock_file_path, 'w') as f:
-                f.write(str(os.getpid()))
+            if acquired:
+                logging.info(f"Bot runner lock acquired successfully by PID {self.lock_value}")
+                # Start a background thread to periodically refresh the lock
+                self._start_refresh_thread()
+                return True
+            else:
+                # Get the PID of the other instance
+                other_pid = self.redis.get(self.lock_key)
+                logging.error(f"Another BotRunner instance (PID {other_pid}) is already running. Exiting.")
+                return False
                 
-            logging.info(f"Bot runner lock acquired successfully by PID {os.getpid()}")
-            return True
-        except Timeout:
-            logging.error("Another BotRunner instance is already running. Exiting.")
-            return False
         except Exception as e:
-            logging.error(f"Error acquiring lock: {str(e)}")
-            logging.error(f"Make sure your user has write access to {self.lock_file_path}")
+            logging.error(f"Error acquiring Redis lock: {str(e)}")
             return False
     
+    def _start_refresh_thread(self):
+        """Start a thread to periodically refresh the lock expiry time"""
+        def refresh_lock():
+            while self.running:
+                try:
+                    # Check if we still own the lock before refreshing
+                    if self.redis.get(self.lock_key) == self.lock_value:
+                        self.redis.expire(self.lock_key, self.lock_expiry)
+                        logging.debug(f"Lock refreshed, extended for {self.lock_expiry} seconds")
+                    else:
+                        logging.error("Lock was taken by another process!")
+                        self.running = False
+                        break
+                except Exception as e:
+                    logging.error(f"Error refreshing lock: {e}")
+                
+                # Sleep for 1/3 of the expiry time
+                time.sleep(self.lock_expiry / 3)
+        
+        self.refresh_thread = threading.Thread(target=refresh_lock, daemon=True)
+        self.refresh_thread.start()
+    
     def release_lock(self):
-        """Release the lock file"""
+        """Release the Redis lock"""
         try:
-            if self.lock.is_locked:
-                self.lock.release()
+            # Only delete the lock if we own it (compare with our PID)
+            current_value = self.redis.get(self.lock_key)
+            if (current_value == self.lock_value):
+                self.redis.delete(self.lock_key)
                 logging.info("Bot runner lock released")
+            else:
+                logging.warning("Cannot release lock as it's owned by another process")
         except Exception as e:
-            logging.error(f"Error releasing lock: {e}")
+            logging.error(f"Error releasing Redis lock: {e}")
             
     def start_discord_bot(self):
         """Initialize and start Discord bot"""
