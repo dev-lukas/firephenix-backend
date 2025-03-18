@@ -1,8 +1,9 @@
 from flask import Blueprint, jsonify, request
 from app.utils.database import DatabaseManager
+from app.utils.redis_manager import RedisManager
 from app.utils.security import limiter
-from app.bots.discordbot import DiscordBot
-from app.bots.teamspeakbot import TeamspeakBot
+
+redis_manager = RedisManager()
 
 user_online_bp = Blueprint('/api/user/online', __name__)
 
@@ -12,10 +13,8 @@ def get_connected_users():
     platform = request.args.get('platform')
     if platform not in ['discord', 'teamspeak']:
         return jsonify({'error': 'Invalid platform'}), 400
-        
-    bot = DiscordBot() if platform == 'discord' else TeamspeakBot()
-    online_users = bot.get_online_users()
     
+    online_users = redis_manager.get_online_users(platform)
     id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
     placeholders = ','.join(['?'] * len(online_users))
     

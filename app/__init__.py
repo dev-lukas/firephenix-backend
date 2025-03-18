@@ -1,10 +1,7 @@
-import threading
 from flask import Flask
 from flask_cors import CORS
 from datetime import  timedelta
 from app.config import Config
-from app.bots.teamspeakbot import TeamspeakBot
-from app.bots.discordbot import DiscordBot
 from app.utils.logger import RankingLogger
 
 from app.api.auth.routes import auth_bp
@@ -21,19 +18,6 @@ from app.api.user.profile.channel.routes import user_profile_channel_bp
 logging = RankingLogger(__name__).get_logger()
 
 def create_app():
-
-    logging.info("Starting Bots...")
-
-    ts = TeamspeakBot()
-    dc = DiscordBot()
-
-    ts_thread = threading.Thread(target=ts.run, daemon=True)
-    dc_thread = threading.Thread(target=dc.run, daemon=True)
-
-    ts_thread.start()
-    dc_thread.start()
-
-    logging.info("Bots started successfully.")
     logging.info("Starting Flask App...")
 
     app = Flask(__name__)

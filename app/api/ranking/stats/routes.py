@@ -1,9 +1,10 @@
 from flask import Blueprint, jsonify
 from app.utils.logger import RankingLogger
 from app.utils.database import DatabaseManager
-from app.bots.discordbot import DiscordBot
-from app.bots.teamspeakbot import TeamspeakBot
+from app.utils.redis_manager import RedisManager
 from app.utils.security import limiter
+
+redis_manager = RedisManager()
 
 ranking_stats_bp = Blueprint('ranking_stats', __name__)
 
@@ -40,8 +41,8 @@ def get_stats():
         db.close()
 
         online_users = (
-            len(DiscordBot().get_online_users()) +
-            len(TeamspeakBot().get_online_users())
+            len(redis_manager.get_online_users('discord')) +
+            len(redis_manager.get_online_users('teamspeak'))
         )
 
         rankings = {

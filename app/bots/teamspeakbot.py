@@ -33,6 +33,12 @@ class TeamspeakBot:
         self.initialized = True
         self._init_config()
         self._init_state()
+        self.redis = None
+        
+    def setup_redis(self, redis_client):
+        """Setup Redis connection"""
+        self.redis = redis_client
+        logging.info("TeamSpeak bot Redis connection established")
 
     def _init_config(self):
         """Initialize configuration parameters"""

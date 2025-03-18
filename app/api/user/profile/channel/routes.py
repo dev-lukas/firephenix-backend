@@ -1,9 +1,9 @@
 from flask import Blueprint, jsonify, request, session
-import asyncio
 from app.utils.database import DatabaseManager
+from app.utils.redis_manager import RedisManager
 from app.utils.security import limiter, login_required
-from app.bots.discordbot import DiscordBot
-from app.bots.teamspeakbot import TeamspeakBot
+
+redis_manager = RedisManager()
 
 user_profile_channel_bp = Blueprint('/api/user/profile/channel', __name__)
 
@@ -46,17 +46,9 @@ def create_channel():
         }), 400
     
     if platform == 'discord':
-        bot = DiscordBot()
-        future = asyncio.run_coroutine_threadsafe(
-            bot.create_owned_channel(discord_id, f"{name}'s Channel"), bot.bot.loop
-        )
-        try:
-            channel_id = future.result(timeout=300)
-        except TimeoutError:
-            return jsonify({'error': 'Error creating channel'}), 500
+        channel_id = redis_manager.publish_command('discord', 'create_owned_channel', user_id=discord_id, channel_name=f"{name}'s Channel")
     else:
-        bot = TeamspeakBot()
-        channel_id = bot.create_owned_channel(teamspeak_id, f"{name}'s Channel")
+        channel_id = redis_manager.publish_command('teamspeak', 'create_owned_channel', user_id=teamspeak_id, channel_name=f"{name}'s Channel")
 
     if not channel_id:
         return jsonify({'error': 'Error creating channel'}), 500

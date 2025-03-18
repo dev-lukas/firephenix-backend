@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify, request, session
-import asyncio
 from app.utils.database import DatabaseManager
 from app.utils.security import limiter, login_required, generate_verification_code
-from app.bots.discordbot import DiscordBot
-from app.bots.teamspeakbot import TeamspeakBot
+from app.utils.redis_manager import RedisManager
 
 user_profile_verification_bp = Blueprint('/api/user/profile/verification/', __name__)
+
+redis_manager = RedisManager()
 
 @user_profile_verification_bp.route('/api/user/profile/verification/initiate', methods=['POST'])
 @login_required
@@ -21,13 +21,12 @@ def initiate_verification():
     if platform not in ['discord', 'teamspeak']:
         return jsonify({'error': 'Invalid platform'}), 400
     
+    online_users = redis_manager.get_online_users(platform)
     if platform == 'discord':
-        bot = DiscordBot()
-        if int(platform_id) not in bot.get_online_users():
+        if int(platform_id) not in online_users:
             return jsonify({'error': 'User not connected'}), 400
     else:
-        bot = TeamspeakBot()
-        if platform_id not in bot.get_online_users():
+        if platform_id not in online_users:
             return jsonify({'error': 'User not connected'}), 400
     
     db = DatabaseManager()
@@ -38,7 +37,7 @@ def initiate_verification():
 
     if existing:
         return jsonify({
-            'error': 'This  account is already linked to another Steam profile'
+            'error': 'This account is already linked to another Steam profile'
         }), 400
 
     verification_code = generate_verification_code()
@@ -56,12 +55,7 @@ def initiate_verification():
     
     db.close()
 
-    if platform == 'discord':
-        asyncio.run_coroutine_threadsafe(
-            bot.send_verification(platform_id, verification_code), bot.bot.loop
-        )
-    else:
-        bot.send_verification(platform_id, verification_code)
+    redis_manager.publish_command(platform, 'send_verification', platform_id=platform_id, code=verification_code)
 
     return jsonify({'message': 'Verification code sent'})
 
@@ -100,7 +94,7 @@ def verify_code():
     try:
         db.execute_query("START TRANSACTION")
         
-        existing_users = db.execute_query(f"""
+        existing_users = db.execute_query("""
             SELECT id, steam_id, discord_id, teamspeak_id, name, level, division
             FROM user
             WHERE steam_id = ?

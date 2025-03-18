@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify, request
 from app.utils.logger import RankingLogger
 from app.utils.database import DatabaseManager
-from app.bots.discordbot import DiscordBot
-from app.bots.teamspeakbot import TeamspeakBot
+from app.utils.redis_manager import RedisManager
 from app.utils.security import limiter
 from datetime import datetime
 
+redis_manager = RedisManager()
 ranking_bp = Blueprint('ranking', __name__)
 
 @ranking_bp.route('/api/ranking', methods=['GET'])
@@ -22,8 +22,9 @@ def get_ranking():
         
         db = DatabaseManager()
         
-        discord_users = DiscordBot().get_online_users()
-        teamspeak_users = TeamspeakBot().get_online_users()
+
+        discord_users = redis_manager.get_online_users('discord')
+        teamspeak_users = redis_manager.get_online_users('teamspeak')
         online_users = set(discord_users) | set(teamspeak_users)
         
         count_query = """

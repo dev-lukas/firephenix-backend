@@ -30,8 +30,14 @@ class DiscordBot:
 
             self.bot = commands.Bot(command_prefix='!', intents=self.intents)
             self.time_tracker = None
+            self.redis = None
 
             self.setup_events()
+            
+    def setup_redis(self, redis_client):
+        """Setup Redis connection"""
+        self.redis = redis_client
+        logging.info("Discord bot Redis connection established")
 
     def setup_events(self):
         

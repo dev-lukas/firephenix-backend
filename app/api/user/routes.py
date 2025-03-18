@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, session
 from app.config import Config
 from app.utils.database import DatabaseManager
 from app.utils.security import login_required

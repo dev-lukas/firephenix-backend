@@ -6,3 +6,4 @@ mariadb
 flask
 flask-cors
 Flask-Limiter
+redis

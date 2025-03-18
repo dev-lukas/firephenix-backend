@@ -28,8 +28,14 @@ class Config:
     DB_USER="root"
     DB_NAME="firephenix"
     DB_PASSWORD=os.getenv("DB_PASSWORD")
+    # Redis
+    REDIS_HOST = 'localhost'
+    REDIS_PORT = 6379
+    REDIS_DB = 0
     # Limiter
-    LIMITER_STORAGE_URI="memory://"
+    LIMITER_STORAGE_URI="redis://localhost:6379"
+    # Lock Socket - needed for Cross-Platform Locking
+    LOCK_SOCKET_PORT = 47123
     # Rankingsystem
     LEVEL_REQUIREMENTS = {
         1: 0,
@@ -58,6 +64,7 @@ class Config:
         24: 900000,  
         25: 1000000   
     }
+
     # TeamSpeak Level Maps
     TEAMSPEAK_LEVEL_MAP = {
         1: 8,
@@ -114,8 +121,7 @@ class Config:
         24: 1330574116641706176,
         25: 1330574154415603744
     }
-    
-    # Optional helper methods
+
     @classmethod
     def get_level_requirement(cls, level: int) -> int:
         return cls.LEVEL_REQUIREMENTS.get(level, 0)

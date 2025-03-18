@@ -44,7 +44,7 @@ def steam_callback():
         
         session['steam_id'] = steam_id
 
-        return redirect(f'/profile')
+        return redirect('/profile')
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
