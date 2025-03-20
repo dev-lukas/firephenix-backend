@@ -7,3 +7,4 @@ flask
 flask-cors
 Flask-Limiter
 redis
+psutil
