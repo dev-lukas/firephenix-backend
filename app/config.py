@@ -35,7 +35,7 @@ class Config:
     # Limiter
     LIMITER_STORAGE_URI="redis://localhost:6379"
     # Lock Socket - needed for Cross-Platform Locking
-    LOCK_SOCKET_PORT = 47123
+    PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_runner.pid")
     # Rankingsystem
     LEVEL_REQUIREMENTS = {
         1: 0,

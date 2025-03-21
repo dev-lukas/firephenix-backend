@@ -30,14 +30,8 @@ class DiscordBot:
 
             self.bot = commands.Bot(command_prefix='!', intents=self.intents)
             self.time_tracker = None
-            self.redis = None
 
             self.setup_events()
-            
-    def setup_redis(self, redis_client):
-        """Setup Redis connection"""
-        self.redis = redis_client
-        logging.info("Discord bot Redis connection established")
 
     def setup_events(self):
         
@@ -61,9 +55,22 @@ class DiscordBot:
 
     def get_online_users(self):
         if self.time_tracker:
-            return list(self.time_tracker.connected_users)
+            return list(self.time_tracker.connected_users), self.time_tracker.user_name_map
         return []
     
+    async def set_ranks(self, user_id, level):
+        guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
+        if not guild:
+            logging.error("Guild not found")
+            return None
+        member = await guild.fetch_member(user_id)
+        for role in member.roles:
+            if role.id in Config.DISCORD_LEVEL_MAP.values():
+                await member.remove_roles(role)
+        rankup = discord.utils.get(member.guild.roles, id=Config.DISCORD_LEVEL_MAP[level])
+        await member.add_roles(rankup)
+        logging.info(f"User {user_id} ranked up to level {level}")
+
     async def send_verification(self, user_id, code) -> bool:
         """Send verification code to Discord user"""
         try:
@@ -128,25 +135,14 @@ class DiscordBot:
 
         def __init__(self, bot: commands.Bot):
             self.excluded_role_id = Config.DISCORD_EXCLUDED_ROLE_ID
-
             self.database = DatabaseManager()
             self.bot = bot
             self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
             self.connected_users = set()
+            self.user_name_map = {}
             self.bg_task = self.bot.loop.create_task(self.scan_voice_channels())
             self.bg_task = self.bot.loop.create_task(self.check_default_roles())
-            self.bg_task = self.bot.loop.create_task(self.update_time())
-            self.monitor_task = self.bot.loop.create_task(self.monitor_background_tasks())
             logging.info("Discord Bot started successfully.")
-
-        async def set_ranks(self, user_id, level):
-            member = await self.guild.fetch_member(user_id)
-            for role in member.roles:
-                if role.id in Config.DISCORD_LEVEL_MAP.values():
-                    await member.remove_roles(role)
-            rankup = discord.utils.get(member.guild.roles, id=Config.DISCORD_LEVEL_MAP[level])
-            await member.add_roles(rankup)
-            logging.info(f"User {user_id} ranked up to level {level}")
 
         async def check_rank(self, user_id):
             """Check if user has the correct rank and update if necessary"""
@@ -158,34 +154,7 @@ class DiscordBot:
                     correct_rank = True
                     break
             if not correct_rank:
-                await self.set_ranks(user_id, rank)
-
-        async def update_time(self):
-            """Background task that runs every minute to update the time spent in voice chat for each user.
-            """
-            await self.bot.wait_until_ready()
-            while not self.bot.is_closed():
-                try:
-                    now = datetime.now()
-                    next_minute = (now + timedelta(minutes=1)).replace(second=0, microsecond=0)
-                    delay = (next_minute - now).total_seconds()
-                    
-                    await asyncio.sleep(max(0, delay))
-
-                    if datetime.now().minute == 0:
-                        self.database.log_usage_stats(
-                            user_count=len(self.connected_users),
-                            platform='discord'
-                        )
-                    if self.connected_users:
-                        self.database.update_times(self.connected_users, "discord")
-                        self.database.update_heatmap(self.connected_users, "discord")
-                        upranked_user = self.database.update_ranks(self.connected_users, "discord")
-                        for user_id, level in upranked_user:
-                            await self.set_ranks(user_id, level)
-                            
-                except Exception as e:
-                    logging.error(f"Error updating time: {e}")
+                await DiscordBot().set_ranks(user_id, rank)
 
         async def scan_voice_channels(self):
             """Scan all voice channels and add connected users to the set"""
@@ -195,8 +164,7 @@ class DiscordBot:
                 for member in voice_channel.members:
                     if not member.bot:  # Ignore bots
                         self.connected_users.add(member.id)
-                        self.database.update_user_name(member.id, member.display_name, "discord")
-                        self.database.update_login_streak(str(member.id), "discord")
+                        self.user_name_map[member.id] = member.display_name
               
             logging.info(f"Initial voice channel scan complete. Found {len(self.connected_users)} users.")
 
@@ -228,13 +196,13 @@ class DiscordBot:
                 if before.channel is None and after.channel is not None:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
                         self.connected_users.add(member.id)
-                        self.database.update_user_name(member.id, member.display_name, "discord")
-                        self.database.update_login_streak(member.id, "discord")
+                        self.user_name_map[member.id] = member.display_name
                         await self.check_rank(member.id)
 
                 elif before.channel is not None and after.channel is None:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
                         self.connected_users.remove(member.id)
+                        self.user_name_map.pop(member.id, None)
             except Exception as e:
                 logging.error(f"Error updating voice state: {e}")
 
@@ -249,14 +217,3 @@ class DiscordBot:
                     await member.add_roles(default_role)
             except Exception as e:
                 logging.error(f"Error adding default role to new member: {e}")
-
-        async def monitor_background_tasks(self):
-            while not self.bot.is_closed():
-                try:
-                    if self.bg_task.done():
-                        if self.bg_task.exception():
-                            logging.error(f"Background task failed: {self.bg_task.exception()}")
-                            self.bg_task = self.bot.loop.create_task(self.update_time())
-                except Exception as e:
-                    logging.error(f"Error in task monitor: {e}")
-                await asyncio.sleep(10)

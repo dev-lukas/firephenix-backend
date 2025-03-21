@@ -1,7 +1,5 @@
-import threading
 import ts3
 import time
-from datetime import datetime, timedelta
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
 from app.config import Config
@@ -33,12 +31,6 @@ class TeamspeakBot:
         self.initialized = True
         self._init_config()
         self._init_state()
-        self.redis = None
-        
-    def setup_redis(self, redis_client):
-        """Setup Redis connection"""
-        self.redis = redis_client
-        logging.info("TeamSpeak bot Redis connection established")
 
     def _init_config(self):
         """Initialize configuration parameters"""
@@ -55,6 +47,7 @@ class TeamspeakBot:
         self.connected_users = set()
         self.client_uid_map = {}
         self.client_dbid_map = {}
+        self.client_name_map = {}
         self.running = False
         self.reconnect_delay = self.INITIAL_RECONNECT_DELAY
 
@@ -92,6 +85,7 @@ class TeamspeakBot:
         """Process existing clients after connection"""
         self.connected_users.clear()
         self.client_uid_map.clear()
+        self.client_name_map.clear()
         
         clients = ts3conn.exec_("clientlist")
         for client in clients:
@@ -112,8 +106,7 @@ class TeamspeakBot:
                 uid, name = client_data
                 self.connected_users.add(uid)
                 self.client_uid_map[client["clid"]] = uid
-                self.database.update_user_name(uid, name, "teamspeak")
-                self.database.update_login_streak(uid, "teamspeak")
+                self.client_name_map[uid] = name
 
     def check_rank(self, uid, ts3conn):
         """Check if user rank needs to be updated
@@ -130,12 +123,12 @@ class TeamspeakBot:
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             if Config.TEAMSPEAK_LEVEL_MAP[rank] not in group_ids:
                 logging.debug(f"Rank {rank} update required for user: {uid}")
-                self.update_rank([(uid, rank)])
+                self.set_ranks([(uid, rank)])
 
         except Exception:
             logging.error(f"Error getting server groups for client {uid}")
 
-    def update_rank(self, upranked_users):
+    def set_ranks(self, upranked_users):
         """
         Update user ranks in the TeamSpeak server
         
@@ -173,31 +166,6 @@ class TeamspeakBot:
         except ts3.query.TS3QueryError as err:
             logging.error(f"TS3 Query Error: {err}")
 
-    def update_time(self):
-        """Background thread for updating user times and ranks"""
-        logging.info("Teamspeak Time Thread started successfully.")
-        
-        while self.running:
-            now = datetime.now()
-            next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=self.UPDATE_INTERVAL)
-            sleep_duration = (next_run - now).total_seconds()
-            time.sleep(max(0, sleep_duration))
-
-            if datetime.now().minute == 0:
-                self.database.log_usage_stats(
-                    user_count=len(self.connected_users),
-                    platform='teamspeak'
-                )
-                
-            if self.connected_users:
-                self.database.update_times(self.connected_users, "teamspeak")
-                self.database.update_heatmap(self.connected_users, "teamspeak")
-                upranked_users = self.database.update_ranks(
-                    self.connected_users, 
-                    "teamspeak"
-                )
-                self.update_rank(upranked_users)
-
     def handle_event(self, event, ts3conn):
         """
         Process TeamSpeak server events
@@ -232,8 +200,7 @@ class TeamspeakBot:
             uid, name = client_data
             self.connected_users.add(uid)
             self.client_uid_map[event["clid"]] = uid
-            self.database.update_user_name(uid, name, "teamspeak")
-            self.database.update_login_streak(uid, "teamspeak")
+            self.client_name_map[uid] = name
             logging.debug("User connected: %s", uid)
             self.check_rank(uid, ts3conn)
 
@@ -242,13 +209,11 @@ class TeamspeakBot:
         uid = self.client_uid_map.pop(event["clid"], None)
         if uid in self.connected_users:
             self.connected_users.remove(uid)
+            self.client_name_map.pop(uid, None)
 
     def run(self):
         """Main bot execution loop with reconnection handling"""
         self.running = True
-        update_thread = threading.Thread(target=self.update_time, daemon=True)
-        update_thread.start()
-
         while self.running:
             try:
                 self._run_connection_loop()
@@ -287,7 +252,7 @@ class TeamspeakBot:
 
     def get_online_users(self):
         """Return list of currently connected users"""
-        return list(self.connected_users)
+        return list(self.connected_users), self.client_name_map
     
     def create_owned_channel(self, user_id: str, channel_name: str) -> int:
         """create_owned_channel Creates a new owned channel for the user"""
