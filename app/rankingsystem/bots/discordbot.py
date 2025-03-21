@@ -1,7 +1,5 @@
-import asyncio
 import time
 import discord
-from datetime import datetime, timedelta
 from discord.ext import commands
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
