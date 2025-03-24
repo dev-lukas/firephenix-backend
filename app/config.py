@@ -62,7 +62,7 @@ class Config:
         22: 300000, 
         23: 600000,  
         24: 900000,  
-        25: 1000000   
+        25: 1800000   
     }
 
     # Seasonal Division Requirements
