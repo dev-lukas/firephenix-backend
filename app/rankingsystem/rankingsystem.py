@@ -50,21 +50,28 @@ class RankingSystem:
                     )
 
                 if connected_users:
+                    for user_id in connected_users:
+                        if user_id not in last_users[platform]:
+                            self.database.update_user_name(user_id, names[user_id], platform)
+                            self.database.update_login_streak(user_id, platform)    
+
+                    last_users[platform] = connected_users
                     self.database.update_times(connected_users, platform)
                     self.database.update_heatmap(connected_users, platform)
                     upranked_user = self.database.update_ranks(connected_users, platform)
                     for user_id, level in upranked_user:
                         if platform == 'discord':
-                            self.dc.loop.create_task(self.dc.set_ranks(user_id, level))
+                            self.dc.loop.create_task(self.dc.set_ranks(user_id, level=level))
                         else:
-                            self.ts.set_ranks(user_id, level)
+                            self.ts.set_ranks(user_id, level=level)
 
-                for user_id in connected_users:
-                    if user_id not in last_users[platform]:
-                        self.database.update_user_name(user_id, names[user_id], platform)
-                        self.database.update_login_streak(user_id, platform)
+                    upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
+                    for user_id, division in upranked_season_user:
+                        if platform == 'discord':
+                            self.dc.loop.create_task(self.dc.set_ranks(user_id, division=division))
+                        else:
+                            self.ts.set_ranks(user_id, division=division)
 
-                last_users[platform] = connected_users
                 self.redis.set(f'{platform}:online_users', json.dumps(connected_users))
 
     def run(self) -> bool:

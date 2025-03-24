@@ -56,18 +56,71 @@ class DiscordBot:
             return list(self.time_tracker.connected_users), self.time_tracker.user_name_map
         return []
     
-    async def set_ranks(self, user_id, level):
+    async def set_ranks(self, user_id, level: int = None, division: int = None):
+        """
+        Set Discord role(s) for a user based on their level and/or division.
+        
+        Args:
+            user_id: Discord user ID
+            level: User's level (optional)
+            division: User's division (optional)
+        
+        Returns:
+            bool: True if successful, None if an error occurred
+        """            
         guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
         if not guild:
             logging.error("Guild not found")
             return None
-        member = await guild.fetch_member(user_id)
-        for role in member.roles:
-            if role.id in Config.DISCORD_LEVEL_MAP.values():
-                await member.remove_roles(role)
-        rankup = discord.utils.get(member.guild.roles, id=Config.DISCORD_LEVEL_MAP[level])
-        await member.add_roles(rankup)
-        logging.info(f"User {user_id} ranked up to level {level}")
+        
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            logging.error(f"User {user_id} not found in guild")
+            return None
+        except Exception as e:
+            logging.error(f"Error fetching member {user_id}: {e}")
+            return None
+        
+        try:
+            if level is not None:
+                level_roles_to_remove = [
+                    role for role in member.roles 
+                    if role.id in Config.DISCORD_LEVEL_MAP.values()
+                ]
+                if level_roles_to_remove:
+                    await member.remove_roles(*level_roles_to_remove)
+                    
+                level_role = discord.utils.get(guild.roles, id=Config.DISCORD_LEVEL_MAP.get(level))
+                if level_role:
+                    await member.add_roles(level_role)
+                    logging.info(f"User {user_id} updated to level {level}")
+                else:
+                    logging.error(f"Could not find level role for level {level}")
+            
+            if division is not None:
+                division_roles_to_remove = [
+                    role for role in member.roles 
+                    if role.id in Config.DISCORD_DIVISION_MAP.values()
+                ]
+                if division_roles_to_remove:
+                    await member.remove_roles(*division_roles_to_remove)
+                    
+                division_role = discord.utils.get(guild.roles, id=Config.DISCORD_DIVISION_MAP.get(division))
+                if division_role:
+                    await member.add_roles(division_role)
+                    logging.info(f"User {user_id} updated to division {division}")
+                else:
+                    logging.error(f"Could not find division role for division {division}")
+            
+            return True
+            
+        except discord.Forbidden:
+            logging.error(f"Bot lacks permission to modify roles for user {user_id}")
+            return None
+        except Exception as e:
+            logging.error(f"Error setting roles for user {user_id}: {e}")
+            return None
 
     async def send_verification(self, user_id, code) -> bool:
         """Send verification code to Discord user"""
@@ -142,17 +195,39 @@ class DiscordBot:
             self.bg_task = self.bot.loop.create_task(self.check_default_roles())
             logging.info("Discord Bot started successfully.")
 
-        async def check_rank(self, user_id):
-            """Check if user has the correct rank and update if necessary"""
-            rank = self.database.get_user_rank(user_id, "discord")
-            member = await self.guild.fetch_member(user_id)
-            correct_rank = False
-            for role in member.roles:
-                if role.id == Config.DISCORD_LEVEL_MAP[rank]:
-                    correct_rank = True
-                    break
-            if not correct_rank:
-                await DiscordBot().set_ranks(user_id, rank)
+        async def check_user_roles(self, user_id, check_type="both"):
+            """
+            Check if user has the correct rank and/or division roles and update if necessary
+            
+            Args:
+                user_id: Discord user ID
+                check_type: What to check - "rank", "division", or "both" (default)
+            """
+            try:
+                member = await self.guild.fetch_member(user_id)
+            except discord.NotFound:
+                logging.error(f"User {user_id} not found anymore in guild")
+                return None
+            
+            rank, division = self.database.get_user_roles(user_id, "discord")
+
+            if check_type in ["rank", "both"]:
+                correct_rank = False
+                for role in member.roles:
+                    if role.id == Config.DISCORD_LEVEL_MAP.get(rank):
+                        correct_rank = True
+                        break
+                if not correct_rank:
+                    await DiscordBot().set_ranks(user_id, level=rank)
+            
+            if check_type in ["division", "both"]:
+                correct_division = False
+                for role in member.roles:
+                    if role.id == Config.DISCORD_DIVISION_MAP.get(division):
+                        correct_division = True
+                        break
+                if not correct_division:
+                    await DiscordBot().set_ranks(user_id, divsion=division)
 
         async def scan_voice_channels(self):
             """Scan all voice channels and add connected users to the set"""
@@ -170,19 +245,32 @@ class DiscordBot:
             """Check all members for rank roles and gives user the base role if none present"""
             await self.bot.wait_until_ready()
             try:
-                default_role = discord.utils.get(
+                default_level_role = discord.utils.get(
                     self.guild.roles, 
                     id=Config.DISCORD_LEVEL_MAP[1]
+                )
+                default_division_role = discord.utils.get(
+                    self.guild.roles, 
+                    id=Config.DISCORD_DIVISION_MAP[1]
                 )
                 async for member in self.guild.fetch_members():
                     if not discord.utils.get(member.roles, name=self.excluded_role_id) and not member.bot:
                         has_rank = False
+                        has_division = False
                         for role in member.roles:
                             if role.id in Config.DISCORD_LEVEL_MAP.values():
                                 has_rank = True
                                 break
+                            if role.id in Config.DISCORD_DIVISION_MAP.values():
+                                has_division = True
+                                break
+
                         if not has_rank:
-                            await member.add_roles(default_role)
+                            await member.add_roles(default_level_role)
+
+                        if not has_division:
+                            await member.add_roles(default_division_role)
+                                                   
             except Exception as e:
                 logging.error(f"Error checking default roles: {e}")
 
@@ -195,7 +283,7 @@ class DiscordBot:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):
                         self.connected_users.add(member.id)
                         self.user_name_map[member.id] = member.display_name
-                        await self.check_rank(member.id)
+                        await self.check_user_roles(member.id)
 
                 elif before.channel is not None and after.channel is None:
                     if not discord.utils.get(member.roles, name=self.excluded_role_id):

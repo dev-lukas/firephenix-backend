@@ -268,6 +268,99 @@ class DatabaseManager:
 
         return rankups
     
+    def update_seasonal_ranks(self, users: Set[Union[int, str]], platform: str) -> List[Tuple[Union[int, str], int]]:
+        rankups = []
+        
+        try:
+            user_ids = list(users)
+            
+            if not user_ids:
+                return rankups
+
+            id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
+
+            placeholders = ','.join(['?'] * len(user_ids))
+            query = f"""
+                SELECT 
+                    u.{id_column},
+                    COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time,
+                    u.division
+                FROM user u
+                LEFT JOIN time d 
+                    ON d.platform = 'discord' 
+                    AND d.platform_uid = u.discord_id
+                LEFT JOIN time t 
+                    ON t.platform = 'teamspeak' 
+                    AND t.platform_uid = u.teamspeak_id
+                WHERE u.{id_column} IN ({placeholders})
+            """
+            
+            self.cursor.execute(query, user_ids)
+            results = self.cursor.fetchall()
+
+            for platform_uid, season_time, division in results:
+                calculated_division = Config.get_division_for_minutes(season_time)
+                if calculated_division != division and division <= 5:
+                    update_query = f"""
+                        UPDATE user
+                        SET division = ?
+                        WHERE {id_column} = ?
+                    """
+                    self.cursor.execute(update_query, 
+                                    (calculated_division, platform_uid))
+                    rankups.append((platform_uid, calculated_division))
+
+            rankups = self._update_top_division_ranks(platform, rankups)
+
+            self.conn.commit()
+
+        except mariadb.Error as e:
+            logging.error(f"Seasonal rank update error: {e}")
+            self.conn.rollback()
+            raise
+
+        return rankups
+
+    def _update_top_division_ranks(self, platform: str, rankups: List[Tuple[Union[int, str], int]]) -> List[Tuple[Union[int, str], int]]:
+        """
+        Update the top division (Division 6) based on season time.
+        Only the top Config.TOP_DIVISION_PLAYER_AMOUNT players can be in Division 6.
+        """
+        try:
+            id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
+
+            self.cursor.execute(f"""
+                SELECT u.id, u.{id_column}, COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time, u.division
+                FROM user u
+                LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
+                LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
+                WHERE u.division IN (5, 6) AND u.{id_column} IS NOT NULL
+                ORDER BY season_time DESC
+                LIMIT {Config.TOP_DIVISION_PLAYER_AMOUNT * 2}
+            """)
+            all_players = self.cursor.fetchall()
+            
+            for idx, (user_id, platform_uid, season_time, current_division) in enumerate(all_players):
+                target_division = 6 if idx < Config.TOP_DIVISION_PLAYER_AMOUNT else 5
+                
+                if current_division != target_division:
+                    self.cursor.execute("""
+                        UPDATE user SET division = ? WHERE id = ?
+                    """, (target_division, user_id))
+                    
+                    if target_division == 6:
+                        logging.info(f"Promoted user {platform_uid} to Division 6")
+                        rankups.append((platform_uid, 6))
+                    else:
+                        logging.info(f"Demoted user {platform_uid} to Division 5")
+                        rankups.append((platform_uid, 5))
+            
+            return rankups
+
+        except mariadb.Error as e:
+            logging.error(f"Top division rank update error: {e}")
+            raise
+    
     def update_user_name(self, user_id: str, name: str, platform: str):
         """
         Insert user if not exists, update name if changed
@@ -290,7 +383,7 @@ class DatabaseManager:
         """
         self.execute_query(query, (user_count, platform))
 
-    def get_user_rank(self, user_id: Union[int, str], platform: str) -> Optional[int]:
+    def get_user_roles(self, user_id: Union[int, str], platform: str) -> Tuple[Optional[int], Optional[int]]:
         """
         Get the rank (level) of a user based on their TeamSpeak or Discord ID.
 
@@ -305,17 +398,18 @@ class DatabaseManager:
 
         try:
             query = f"""
-                SELECT level 
+                SELECT level, division
                 FROM user
                 WHERE {id_column} = ?
             """
             self.cursor.execute(query, (str(user_id),))
+            
             result = self.cursor.fetchone()
-            return result[0] if result else None
+            return result if result else (None, None)
             
         except mariadb.Error as e:
             logging.error(f"Rank fetch failed for {platform} {user_id}: {e}")
-            return None
+            return None, None
 
     def update_login_streak(self, platform_uid: str, platform: str) -> Tuple[int, int]:
         """

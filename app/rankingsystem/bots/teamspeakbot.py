@@ -108,7 +108,7 @@ class TeamspeakBot:
                 self.client_uid_map[client["clid"]] = uid
                 self.client_name_map[uid] = name
 
-    def check_rank(self, uid, ts3conn):
+    def check_user_roles(self, uid, ts3conn):
         """Check if user rank needs to be updated
         Args:
             clid: Client ID
@@ -118,53 +118,97 @@ class TeamspeakBot:
             logging.info("Checking rank for user: %s", uid)
             db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=uid)[0]
             cldbid = db_info.get("cldbid")
-            rank = self.database.get_user_rank(uid, "teamspeak")
+            rank, division = self.database.get_user_roles(uid, "teamspeak")
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             if Config.TEAMSPEAK_LEVEL_MAP[rank] not in group_ids:
                 logging.debug(f"Rank {rank} update required for user: {uid}")
-                self.set_ranks([(uid, rank)])
+                self.set_ranks(uid, level=rank)
+            if Config.TEAMSPEAK_DIVISION_MAP[division] not in group_ids:
+                logging.debug(f"Division {division} update required for user: {uid}")
+                self.set_ranks(uid, division=division)
 
         except Exception:
             logging.error(f"Error getting server groups for client {uid}")
 
-    def set_ranks(self, upranked_users):
+    def set_ranks(self, client_id, level=None, division=None):
         """
         Update user ranks in the TeamSpeak server
         
         Args:
-            upranked_users: List of tuples containing (client_id, new_rank)
+            client_id: TeamSpeak client unique ID
+            level: New level rank (optional)
+            division: New division rank (optional)
         """
+        if level is None and division is None:
+            logging.warning(f"No rank type specified for user {client_id}")
+            return None
+            
         try:
             with self.connect_to_server() as ts3conn:
-                for client_id, rank in upranked_users:
-                    self._process_rank_update(ts3conn, client_id, rank)
-        except Exception as e:
-            logging.error(f"Rank update failed: {e}")
+                db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
+                cldbid = db_info.get("cldbid")
 
-    def _process_rank_update(self, ts3conn, client_id, rank):
-        """Process individual rank updates"""
+                if level is not None:
+                    self._update_server_group(
+                        ts3conn, 
+                        cldbid, 
+                        Config.TEAMSPEAK_LEVEL_MAP, 
+                        level, 
+                        "level",
+                        client_id
+                    )
+                    
+                if division is not None:
+                    self._update_server_group(
+                        ts3conn, 
+                        cldbid, 
+                        Config.TEAMSPEAK_DIVISION_MAP, 
+                        division,
+                        "division",
+                        client_id
+                    )
+                    
+                return True
+                    
+        except Exception as e:
+            logging.error(f"Rank update failed for user {client_id}: {e}")
+            return None
+
+    def _update_server_group(self, ts3conn, cldbid, group_map, new_value, rank_type, client_id):
+        """
+        Update a specific server group type for a user
+        
+        Args:
+            ts3conn: Active TeamSpeak connection
+            cldbid: Client database ID
+            group_map: Config map (TEAMSPEAK_LEVEL_MAP or TEAMSPEAK_DIVISION_MAP)
+            new_value: New rank value
+            rank_type: Type of rank ("level" or "division")
+            client_id: Original client ID for logging
+        """
         try:
-            db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
-            cldbid = db_info.get("cldbid")
-            
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+            
             for group in groups_info:
                 group_id = int(group.get("sgid", 0))
-                if group_id in Config.TEAMSPEAK_LEVEL_MAP.values():
+                if group_id in group_map.values():
                     ts3conn.exec_("servergroupdelclient", 
                                 sgid=group_id, 
                                 cldbid=cldbid)
             
-            new_group_id = int(Config.TEAMSPEAK_LEVEL_MAP[rank])
-            ts3conn.exec_("servergroupaddclient", 
-                         sgid=new_group_id, 
-                         cldbid=cldbid)
-            
-            logging.info(f"Updated rank for user {client_id} to rank {rank}")
-            
+            if new_value in group_map:
+                new_group_id = group_map[new_value]
+                ts3conn.exec_("servergroupaddclient", 
+                            sgid=new_group_id, 
+                            cldbid=cldbid)
+                
+                logging.info(f"Updated {rank_type} for user {client_id} to {new_value}")
+            else:
+                logging.error(f"Invalid {rank_type} value: {new_value}")
+                
         except ts3.query.TS3QueryError as err:
-            logging.error(f"TS3 Query Error: {err}")
+            logging.error(f"TS3 Query Error updating {rank_type}: {err}")
 
     def handle_event(self, event, ts3conn):
         """
@@ -202,7 +246,7 @@ class TeamspeakBot:
             self.client_uid_map[event["clid"]] = uid
             self.client_name_map[uid] = name
             logging.debug("User connected: %s", uid)
-            self.check_rank(uid, ts3conn)
+            self.check_user_roles(uid, ts3conn)
 
     def _handle_client_disconnect(self, event):
         """Handle client disconnection event"""

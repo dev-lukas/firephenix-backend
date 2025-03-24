@@ -65,9 +65,27 @@ class Config:
         25: 1000000   
     }
 
+    # Seasonal Division Requirements
+    TOP_DIVISION_PLAYER_AMOUNT = 10
+    DIVISION_REQUIREMENTS = {
+        1: 0,
+        2: 3000,
+        3: 6000,
+        4: 12000,
+        5: 24000
+    }
+
+    TEAMSPEAK_DIVISION_MAP = {
+        1: 33,
+        2: 34,
+        3: 35,
+        4: 36,
+        5: 37,
+        6: 38
+    }
     # TeamSpeak Level Maps
     TEAMSPEAK_LEVEL_MAP = {
-        1: 8,
+        1: 39,
         2: 9,
         3: 10,
         4: 11,
@@ -87,11 +105,20 @@ class Config:
         18: 25,
         19: 26,
         20: 27,
-        21: 38,
-        22: 39,
-        23: 40,
-        24: 218,
-        25: 219
+        21: 28,
+        22: 29,
+        23: 30,
+        24: 31,
+        25: 32
+    }
+
+    DISCORD_DIVISION_MAP = {
+        1: 1353806491487830216,
+        2: 1353806610342084779,
+        3: 1353806666591768678,
+        4: 1353806722006777897,
+        5: 1353806807793143829,
+        6: 1353806901032517715
     }
 
     DISCORD_LEVEL_MAP = {
@@ -122,6 +149,17 @@ class Config:
         25: 1330574154415603744
     }
 
+    @classmethod
+    def get_division_requirement(cls, division: int) -> int:
+        return cls.DIVISION_REQUIREMENTS.get(division, 0)
+    
+    @classmethod
+    def get_division_for_minutes(cls, minutes: int) -> int:
+        for division, requirement in sorted(cls.DIVISION_REQUIREMENTS.items(), reverse=True):
+            if minutes >= requirement:
+                return division
+        return 0
+    
     @classmethod
     def get_level_requirement(cls, level: int) -> int:
         return cls.LEVEL_REQUIREMENTS.get(level, 0)
