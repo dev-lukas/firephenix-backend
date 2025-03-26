@@ -101,6 +101,7 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS login_streak (
                     platform_uid VARCHAR(255) NOT NULL,
                     platform ENUM('discord', 'teamspeak') NOT NULL,
+                    logins INT DEFAULT 1,
                     current_streak INT DEFAULT 1,
                     longest_streak INT DEFAULT 1,
                     last_login DATE NOT NULL,
@@ -416,7 +417,6 @@ class DatabaseManager:
         Update login streak for a user. Returns tuple of (current_streak, longest_streak)
         """
         try:
-            # Get current streak info
             self.cursor.execute("""
                 SELECT current_streak, longest_streak, last_login 
                 FROM login_streak 
@@ -425,38 +425,24 @@ class DatabaseManager:
             
             result = self.cursor.fetchone()
             today = datetime.now().date()
-            
-            if not result:
-                # First time login
-                self.cursor.execute("""
-                    INSERT INTO login_streak 
-                    (platform_uid, platform, current_streak, longest_streak, last_login)
-                    VALUES (?, ?, 1, 1, ?)
-                """, (str(platform_uid), platform, today))
-                self.conn.commit()
-                return (1, 1)
-                
             current_streak, longest_streak, last_login = result
-            
-            if last_login == today:
-                # Already logged in today
-                return (current_streak, longest_streak)
                 
             if (today - last_login).days == 1:
-                # Consecutive day login
                 current_streak += 1
                 longest_streak = max(longest_streak, current_streak)
             else:
-                # Streak broken
                 current_streak = 1
                 
             self.cursor.execute("""
-                UPDATE login_streak 
-                SET current_streak = ?,
+                INSERT INTO login_streak
+                    (platform_uid, platform, logins, current_streak, longest_streak, last_login) 
+                VALUES (?, ?, 1, 1, 1, ?)
+                ON DUPLICATE KEY UPDATE
+                    logins = logins + 1,
+                    current_streak = ?,
                     longest_streak = ?,
                     last_login = ?
-                WHERE platform = ? AND platform_uid = ?
-            """, (current_streak, longest_streak, today, platform, str(platform_uid)))
+            """, (str(platform_uid), platform, today, current_streak, longest_streak, today))
             
             self.conn.commit()
             return (current_streak, longest_streak)
