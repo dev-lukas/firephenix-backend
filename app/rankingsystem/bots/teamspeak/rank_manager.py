@@ -28,12 +28,27 @@ class RankManager:
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             
-            if self.config.TEAMSPEAK_LEVEL_MAP[rank] not in group_ids:
-                logging.debug(f"Rank {rank} update required for user: {uid}")
+            correct_rank = False
+            rank_roles_count = 0
+            correct_division = False
+            division_roles_count = 0
+            for group in group_ids:
+                if group in self.config.TEAMSPEAK_LEVEL_MAP.values():
+                    rank_roles_count += 1
+                    if group == self.config.TEAMSPEAK_LEVEL_MAP.get(rank):
+                        correct_rank = True
+
+                if group in self.config.TEAMSPEAK_DIVISION_MAP.values():
+                    division_roles_count += 1
+                    if group == self.config.TEAMSPEAK_DIVISION_MAP.get(division):
+                        correct_division = True
+
+            if not correct_rank or rank_roles_count > 1:
+                logging.debug(f"Setting rank for user {uid} to {rank} (had {rank_roles_count} rank roles)")
                 self.set_ranks(uid, level=rank)
-                
-            if self.config.TEAMSPEAK_DIVISION_MAP[division] not in group_ids:
-                logging.debug(f"Division {division} update required for user: {uid}")
+
+            if not correct_division or division_roles_count > 1:
+                logging.debug(f"Setting division for user {uid} to {division} (had {division_roles_count} division roles)")
                 self.set_ranks(uid, division=division)
 
         except ts3.query.TS3QueryError as e:

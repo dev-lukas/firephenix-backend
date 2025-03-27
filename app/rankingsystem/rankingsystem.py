@@ -55,7 +55,7 @@ class RankingSystem:
                         for user_id in connected_users:
                             if user_id not in last_users[platform]:
                                 self.database.update_user_name(user_id, names[user_id], platform)
-                                self.database.update_login_streak(user_id, platform)    
+                                self.database.update_login_streak(user_id, platform) 
 
                         last_users[platform] = connected_users
                         self.database.update_times(connected_users, platform)
@@ -63,14 +63,14 @@ class RankingSystem:
                         upranked_user = self.database.update_ranks(connected_users, platform)
                         for user_id, level in upranked_user:
                             if platform == 'discord':
-                                self.dc.loop.create_task(self.dc.set_ranks(user_id, level=level))
+                                self.dc.bot.loop.create_task(self.dc.set_ranks(user_id, level=level))
                             else:
                                 self.ts.set_ranks(user_id, level=level)
 
                         upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
                         for user_id, division in upranked_season_user:
                             if platform == 'discord':
-                                self.dc.loop.create_task(self.dc.set_ranks(user_id, division=division))
+                                self.dc.bot.loop.create_task(self.dc.set_ranks(user_id, division=division))
                             else:
                                 self.ts.set_ranks(user_id, division=division)
                 except DatabaseConnectionError:
@@ -159,7 +159,7 @@ class RankingSystem:
                 user_id = data.get('platform_id')
                 code = data.get('code')
                 if self.dc:
-                    self.dc.loop.create_task(self.dc.send_verification(int(user_id), code))
+                    self.dc.bot.loop.create_task(self.dc.send_verification(int(user_id), code))
                     
             elif command == 'create_owned_channel':
                 user_id = data.get('platform_id')
@@ -177,6 +177,12 @@ class RankingSystem:
                         json.dumps({'channel_id': result}),
                         ex=30
                     )
+
+            elif command == 'check_ranks':
+                user_id = data.get('platform_id')
+                if self.dc:
+                    self.dc.bot.loop.create_task(self.dc.check_ranks(int(user_id)))  
+
         except Exception as e:
             logging.error(f"Error handling Discord command: {e}")
 
@@ -207,6 +213,12 @@ class RankingSystem:
                         json.dumps({'channel_id': result}),
                         ex=30
                     )
+
+            elif command == 'check_ranks':
+                user_id = data.get('platform_id')
+                if self.ts:
+                    self.ts.check_ranks(user_id)  
+
         except Exception as e:
             logging.error(f"Error handling TeamSpeak command: {e}")
 

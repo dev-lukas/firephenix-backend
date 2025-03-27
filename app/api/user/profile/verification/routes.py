@@ -125,6 +125,8 @@ def verify_code():
 
         db.execute_query("COMMIT")
         db.close()
+
+        redis_manager.publish_command(platform, 'check_ranks', platform_id=platform_id)
         
     except Exception as e:
         db.execute_query("ROLLBACK")

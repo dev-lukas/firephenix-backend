@@ -55,6 +55,10 @@ class DiscordBot:
         if self.time_tracker:
             return list(self.time_tracker.connected_users), self.time_tracker.user_name_map
         return list(), {}
+
+    async def check_ranks(self, user_id, check_type="both"):
+        """Check if user has the correct rank and/or division roles and update if necessary"""
+        return await self.time_tracker.check_user_roles(user_id, check_type)
     
     async def set_ranks(self, user_id, level: int = None, division: int = None):
         """Set Discord role(s) for a user based on their level and/or division."""
