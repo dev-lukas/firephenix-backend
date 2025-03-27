@@ -1,6 +1,5 @@
 from datetime import datetime
-import sys
-from typing import List, Optional, Set, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union, Callable
 import mariadb
 from app.utils.logger import RankingLogger
 from app.config import Config
@@ -9,9 +8,23 @@ logging = RankingLogger(__name__).get_logger()
 
 __all__ = ['DatabaseManager']
 
+class DatabaseConnectionError(Exception):
+    """Custom exception for database connection errors."""
+    def __init__(self, message="Failed to reconnect to the database"):
+        super().__init__(message)
+
 class DatabaseManager:
     def __init__(self):
+        self.conn = None
+        self.cursor = None
+        self.connect()
+
+    def connect(self) -> bool:
+        """Establish database connection"""
         try:
+            if self.conn:
+                self.close()
+            
             self.conn = mariadb.connect(
                 host=Config.DB_HOST,
                 port=int(Config.DB_PORT),
@@ -22,9 +35,24 @@ class DatabaseManager:
             self.conn.autocommit = False
             self.cursor = self.conn.cursor()
             self.create_tables()
+            return True
         except mariadb.Error as e:
-            logging.error(f"Error connecting to the database: {e}")
-            sys.exit(1)
+            logging.error(f"Error connecting to database: {e}")
+            return False
+
+    def ensure_connection(func: Callable):
+        """Decorator to ensure database connection"""
+        def wrapper(self, *args, **kwargs):
+            if self.conn is None or self.cursor is None:
+                if not self.connect():
+                    raise DatabaseConnectionError("No database connection available")
+            try:
+                return func(self, *args, **kwargs)
+            except (mariadb.Error, AttributeError):
+                if self.connect():
+                    return func(self, *args, **kwargs)
+                raise DatabaseConnectionError("Failed to reconnect to database")
+        return wrapper
 
     def create_tables(self):
         try:
@@ -114,54 +142,46 @@ class DatabaseManager:
             self.conn.rollback()
             raise
     
+    @ensure_connection
     def execute_query(self, query: str, params: tuple = None) -> Optional[List[Tuple]]:
         """
         Generic wrapper for executing SQL queries
-        Returns query results or None on error
+        Returns query results or raises MariaDB error
         """
-        try:
-            if params:
-                self.cursor.execute(query, params)
-            else:
-                self.cursor.execute(query)
-                
-            if query.strip().upper().startswith('SELECT'):
-                return self.cursor.fetchall()
-            else:
-                self.conn.commit()
-                return None
-                
-        except mariadb.Error as e:
-            logging.error(f"Query execution error: {e}")
-            self.conn.rollback()
+        if params:
+            self.cursor.execute(query, params)
+        else:
+            self.cursor.execute(query)
+            
+        if query.strip().upper().startswith('SELECT'):
+            return self.cursor.fetchall()
+        else:
+            self.conn.commit()
             return None
 
+    @ensure_connection 
     def update_times(self, platform_uids: Set[Union[int, str]], platform: str) -> None:
         """Batch update time values for multiple users"""
         if not platform_uids:
             return
-        try:
-            unique_uids = [str(uid) for uid in platform_uids]
-            params = [(uid,platform) for uid in unique_uids]
-            query = f"""
-                INSERT INTO time (platform_uid, platform, total_time, daily_time,
-                                weekly_time, monthly_time, season_time, last_update)
-                VALUES {','.join(['(?, ?, 1, 1, 1, 1, 1, CURRENT_TIMESTAMP)'] * len(platform_uids))}
-                ON DUPLICATE KEY UPDATE
-                    total_time = total_time + 1,
-                    daily_time = daily_time + 1,
-                    weekly_time = weekly_time + 1,
-                    monthly_time = monthly_time + 1,
-                    season_time = season_time + 1,
-                    last_update = CURRENT_TIMESTAMP
-            """
-            flat_params = [item for pair in params for item in pair]
-            self.cursor.execute(query, flat_params)
-            self.conn.commit()
-        except mariadb.Error as e:
-            logging.error(f"Error updating times: {e}")
-            self.conn.rollback()
-            raise
+            
+        unique_uids = [str(uid) for uid in platform_uids]
+        params = [(uid,platform) for uid in unique_uids]
+        query = f"""
+            INSERT INTO time (platform_uid, platform, total_time, daily_time,
+                            weekly_time, monthly_time, season_time, last_update)
+            VALUES {','.join(['(?, ?, 1, 1, 1, 1, 1, CURRENT_TIMESTAMP)'] * len(platform_uids))}
+            ON DUPLICATE KEY UPDATE
+                total_time = total_time + 1,
+                daily_time = daily_time + 1,
+                weekly_time = weekly_time + 1,
+                monthly_time = monthly_time + 1,
+                season_time = season_time + 1,
+                last_update = CURRENT_TIMESTAMP
+        """
+        flat_params = [item for pair in params for item in pair]
+        self.cursor.execute(query, flat_params)
+        self.conn.commit()
     
 
     def get_time_category(self, hour: int) -> str:
@@ -181,6 +201,7 @@ class DatabaseManager:
         else:
             return 'night'
             
+    @ensure_connection
     def update_heatmap(self, platform_uids: Set[Union[int, str]], platform: str):
         """
         Update the activity heatmap for multiple platform UIDs
@@ -196,173 +217,155 @@ class DatabaseManager:
         day_of_week = now.weekday()
         time_category = self.get_time_category(now.hour)
         
-        try:
-            values = []
-            for uid in platform_uids:
-                values.append((str(uid), platform, day_of_week, time_category))
+        values = []
+        for uid in platform_uids:
+            values.append((str(uid), platform, day_of_week, time_category))
+        
+        if not values:
+            return
             
-            if not values:
-                return
-                
-            self.cursor.executemany("""
-                INSERT INTO activity_heatmap 
-                    (platform_uid, platform, day_of_week, time_category, activity_minutes)
-                VALUES (?, ?, ?, ?, 1)
-                ON DUPLICATE KEY UPDATE
-                    activity_minutes = activity_minutes + 1,
-                    last_update = CURRENT_TIMESTAMP
-            """, values)
-            self.conn.commit()
-        except mariadb.Error as e:
-            logging.error(f"Error updating times: {e}")
-            self.conn.rollback()
-            raise
+        self.cursor.executemany("""
+            INSERT INTO activity_heatmap 
+                (platform_uid, platform, day_of_week, time_category, activity_minutes)
+            VALUES (?, ?, ?, ?, 1)
+            ON DUPLICATE KEY UPDATE
+                activity_minutes = activity_minutes + 1,
+                last_update = CURRENT_TIMESTAMP
+        """, values)
+        self.conn.commit()
 
+    @ensure_connection
     def update_ranks(self, users: Set[Union[int, str]], platform: str) -> List[Tuple[Union[int, str], int]]:
         rankups = []
         
-        try:
-            user_ids = list(users)
-            
-            if not user_ids:
-                return rankups
+        user_ids = list(users)
+        
+        if not user_ids:
+            return rankups
 
-            id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
+        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
 
-            placeholders = ','.join(['?'] * len(user_ids))
-            query = f"""
-                SELECT 
-                    u.{id_column},
-                    COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) AS total_time,
-                    u.level
-                FROM user u
-                LEFT JOIN time d 
-                    ON d.platform = 'discord' 
-                    AND d.platform_uid = u.discord_id
-                LEFT JOIN time t 
-                    ON t.platform = 'teamspeak' 
-                    AND t.platform_uid = u.teamspeak_id
-                WHERE u.{id_column} IN ({placeholders})
-            """
-            
-            self.cursor.execute(query, user_ids)
-            results = self.cursor.fetchall()
+        placeholders = ','.join(['?'] * len(user_ids))
+        query = f"""
+            SELECT 
+                u.{id_column},
+                COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) AS total_time,
+                u.level
+            FROM user u
+            LEFT JOIN time d 
+                ON d.platform = 'discord' 
+                AND d.platform_uid = u.discord_id
+            LEFT JOIN time t 
+                ON t.platform = 'teamspeak' 
+                AND t.platform_uid = u.teamspeak_id
+            WHERE u.{id_column} IN ({placeholders})
+        """
+        
+        self.cursor.execute(query, user_ids)
+        results = self.cursor.fetchall()
 
-            for platform_uid, total_time, level in results:
-                calculated_level = Config.get_level_for_minutes(total_time)
-                if calculated_level != level:
-                    update_query = f"""
-                        UPDATE user
-                        SET level = ?
-                        WHERE {id_column} = ?
-                    """
-                    self.cursor.execute(update_query, 
-                                    (calculated_level, platform_uid))
-                    rankups.append((platform_uid, calculated_level))
+        for platform_uid, total_time, level in results:
+            calculated_level = Config.get_level_for_minutes(total_time)
+            if calculated_level != level:
+                update_query = f"""
+                    UPDATE user
+                    SET level = ?
+                    WHERE {id_column} = ?
+                """
+                self.cursor.execute(update_query, 
+                                (calculated_level, platform_uid))
+                rankups.append((platform_uid, calculated_level))
 
-            self.conn.commit()
-
-        except mariadb.Error as e:
-            logging.error(f"Rank update error: {e}")
-            self.conn.rollback()
-            raise
+        self.conn.commit()
 
         return rankups
     
+    @ensure_connection
     def update_seasonal_ranks(self, users: Set[Union[int, str]], platform: str) -> List[Tuple[Union[int, str], int]]:
         rankups = []
         
-        try:
-            user_ids = list(users)
-            
-            if not user_ids:
-                return rankups
+        user_ids = list(users)
+        
+        if not user_ids:
+            return rankups
 
-            id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
+        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
 
-            placeholders = ','.join(['?'] * len(user_ids))
-            query = f"""
-                SELECT 
-                    u.{id_column},
-                    COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time,
-                    u.division
-                FROM user u
-                LEFT JOIN time d 
-                    ON d.platform = 'discord' 
-                    AND d.platform_uid = u.discord_id
-                LEFT JOIN time t 
-                    ON t.platform = 'teamspeak' 
-                    AND t.platform_uid = u.teamspeak_id
-                WHERE u.{id_column} IN ({placeholders})
-            """
-            
-            self.cursor.execute(query, user_ids)
-            results = self.cursor.fetchall()
+        placeholders = ','.join(['?'] * len(user_ids))
+        query = f"""
+            SELECT 
+                u.{id_column},
+                COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time,
+                u.division
+            FROM user u
+            LEFT JOIN time d 
+                ON d.platform = 'discord' 
+                AND d.platform_uid = u.discord_id
+            LEFT JOIN time t 
+                ON t.platform = 'teamspeak' 
+                AND t.platform_uid = u.teamspeak_id
+            WHERE u.{id_column} IN ({placeholders})
+        """
+        
+        self.cursor.execute(query, user_ids)
+        results = self.cursor.fetchall()
 
-            for platform_uid, season_time, division in results:
-                calculated_division = Config.get_division_for_minutes(season_time)
-                if calculated_division != division and division <= 5:
-                    update_query = f"""
-                        UPDATE user
-                        SET division = ?
-                        WHERE {id_column} = ?
-                    """
-                    self.cursor.execute(update_query, 
-                                    (calculated_division, platform_uid))
-                    rankups.append((platform_uid, calculated_division))
+        for platform_uid, season_time, division in results:
+            calculated_division = Config.get_division_for_minutes(season_time)
+            if calculated_division != division and division <= 5:
+                update_query = f"""
+                    UPDATE user
+                    SET division = ?
+                    WHERE {id_column} = ?
+                """
+                self.cursor.execute(update_query, 
+                                (calculated_division, platform_uid))
+                rankups.append((platform_uid, calculated_division))
 
-            rankups = self._update_top_division_ranks(platform, rankups)
+        rankups = self._update_top_division_ranks(platform, rankups)
 
-            self.conn.commit()
-
-        except mariadb.Error as e:
-            logging.error(f"Seasonal rank update error: {e}")
-            self.conn.rollback()
-            raise
+        self.conn.commit()
 
         return rankups
 
+    @ensure_connection
     def _update_top_division_ranks(self, platform: str, rankups: List[Tuple[Union[int, str], int]]) -> List[Tuple[Union[int, str], int]]:
         """
         Update the top division (Division 6) based on season time.
         Only the top Config.TOP_DIVISION_PLAYER_AMOUNT players can be in Division 6.
         """
-        try:
-            id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
+        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
 
-            self.cursor.execute(f"""
-                SELECT u.id, u.{id_column}, COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time, u.division
-                FROM user u
-                LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
-                LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
-                WHERE u.division IN (5, 6) AND u.{id_column} IS NOT NULL
-                ORDER BY season_time DESC
-                LIMIT {Config.TOP_DIVISION_PLAYER_AMOUNT * 2}
-            """)
-            all_players = self.cursor.fetchall()
+        self.cursor.execute(f"""
+            SELECT u.id, u.{id_column}, COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time, u.division
+            FROM user u
+            LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
+            LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
+            WHERE u.division IN (5, 6) AND u.{id_column} IS NOT NULL
+            ORDER BY season_time DESC
+            LIMIT {Config.TOP_DIVISION_PLAYER_AMOUNT * 2}
+        """)
+        all_players = self.cursor.fetchall()
+        
+        for idx, (user_id, platform_uid, season_time, current_division) in enumerate(all_players):
+            target_division = 6 if idx < Config.TOP_DIVISION_PLAYER_AMOUNT else 5
             
-            for idx, (user_id, platform_uid, season_time, current_division) in enumerate(all_players):
-                target_division = 6 if idx < Config.TOP_DIVISION_PLAYER_AMOUNT else 5
+            if current_division != target_division:
+                self.cursor.execute("""
+                    UPDATE user SET division = ? WHERE id = ?
+                """, (target_division, user_id))
                 
-                if current_division != target_division:
-                    self.cursor.execute("""
-                        UPDATE user SET division = ? WHERE id = ?
-                    """, (target_division, user_id))
-                    
-                    if target_division == 6:
-                        logging.info(f"Promoted user {platform_uid} to Division 6")
-                        rankups.append((platform_uid, 6))
-                    else:
-                        logging.info(f"Demoted user {platform_uid} to Division 5")
-                        rankups.append((platform_uid, 5))
-            
-            return rankups
-
-        except mariadb.Error as e:
-            logging.error(f"Top division rank update error: {e}")
-            raise
+                if target_division == 6:
+                    logging.debug(f"Promoted user {platform_uid} to Division 6")
+                    rankups.append((platform_uid, 6))
+                else:
+                    logging.debug(f"Demoted user {platform_uid} to Division 5")
+                    rankups.append((platform_uid, 5))
+        
+        return rankups
     
-    def update_user_name(self, user_id: str, name: str, platform: str):
+    @ensure_connection
+    def update_user_name(self, user_id: str, name: str, platform: str) -> None:
         """
         Insert user if not exists, update name if changed
         platform should be either 'discord' or 'teamspeak'
@@ -377,6 +380,7 @@ class DatabaseManager:
         """
         self.execute_query(query, (str(user_id), name))
 
+    @ensure_connection
     def log_usage_stats(self, user_count: int, platform: str) -> None:
         query = """
             INSERT INTO usage_stats (timestamp, user_count, platform)
@@ -384,6 +388,7 @@ class DatabaseManager:
         """
         self.execute_query(query, (user_count, platform))
 
+    @ensure_connection
     def get_user_roles(self, user_id: Union[int, str], platform: str) -> Tuple[Optional[int], Optional[int]]:
         """
         Get the rank (level) of a user based on their TeamSpeak or Discord ID.
@@ -397,60 +402,52 @@ class DatabaseManager:
         """
         id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
 
-        try:
-            query = f"""
-                SELECT level, division
-                FROM user
-                WHERE {id_column} = ?
-            """
-            self.cursor.execute(query, (str(user_id),))
-            
-            result = self.cursor.fetchone()
-            return result if result else (None, None)
-            
-        except mariadb.Error as e:
-            logging.error(f"Rank fetch failed for {platform} {user_id}: {e}")
-            return None, None
+        query = f"""
+            SELECT level, division
+            FROM user
+            WHERE {id_column} = ?
+        """
+        self.cursor.execute(query, (str(user_id),))
+        
+        result = self.cursor.fetchone()
+        return result if result else (None, None)
 
-    def update_login_streak(self, platform_uid: str, platform: str) -> Tuple[int, int]:
-        """
-        Update login streak for a user. Returns tuple of (current_streak, longest_streak)
-        """
-        try:
-            self.cursor.execute("""
-                SELECT current_streak, longest_streak, last_login 
-                FROM login_streak 
-                WHERE platform = ? AND platform_uid = ?
-            """, (platform, str(platform_uid)))
-            
-            result = self.cursor.fetchone()
-            today = datetime.now().date()
+    @ensure_connection
+    def update_login_streak(self, platform_uid: str, platform: str) -> None:
+        """Update login streak for a user"""
+        self.cursor.execute("""
+            SELECT current_streak, longest_streak, last_login 
+            FROM login_streak 
+            WHERE platform = ? AND platform_uid = ?
+        """, (platform, str(platform_uid)))
+        
+        result = self.cursor.fetchone()
+        today = datetime.now().date()
+        if result:
             current_streak, longest_streak, last_login = result
-                
-            if (today - last_login).days == 1:
-                current_streak += 1
-                longest_streak = max(longest_streak, current_streak)
-            else:
-                current_streak = 1
-                
-            self.cursor.execute("""
-                INSERT INTO login_streak
-                    (platform_uid, platform, logins, current_streak, longest_streak, last_login) 
-                VALUES (?, ?, 1, 1, 1, ?)
-                ON DUPLICATE KEY UPDATE
-                    logins = logins + 1,
-                    current_streak = ?,
-                    longest_streak = ?,
-                    last_login = ?
-            """, (str(platform_uid), platform, today, current_streak, longest_streak, today))
+        else:
+            current_streak = 0
+            longest_streak = 0
+            last_login = today
             
-            self.conn.commit()
-            return (current_streak, longest_streak)
+        if (today - last_login).days == 1:
+            current_streak += 1
+            longest_streak = max(longest_streak, current_streak)
+        else:
+            current_streak = 1
             
-        except mariadb.Error as e:
-            logging.error(f"Error updating login streak: {e}")
-            self.conn.rollback()
-            return (0, 0)
+        self.cursor.execute("""
+            INSERT INTO login_streak
+                (platform_uid, platform, logins, current_streak, longest_streak, last_login) 
+            VALUES (?, ?, 1, 1, 1, ?)
+            ON DUPLICATE KEY UPDATE
+                logins = logins + 1,
+                current_streak = ?,
+                longest_streak = ?,
+                last_login = ?
+        """, (str(platform_uid), platform, today, current_streak, longest_streak, today))
+        
+        self.conn.commit()
 
     def close(self) -> None:
         """Close database connection"""

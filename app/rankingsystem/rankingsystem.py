@@ -6,9 +6,9 @@ import threading
 import time
 import redis
 from app.config import Config
-from app.rankingsystem.bots.discordbot import DiscordBot
-from app.rankingsystem.bots.teamspeakbot import TeamspeakBot
-from app.utils.database import DatabaseManager
+from app.rankingsystem.bots.discord.bot import DiscordBot
+from app.rankingsystem.bots.teamspeak.bot import TeamspeakBot
+from app.utils.database import DatabaseManager, DatabaseConnectionError
 from app.utils.logger import RankingLogger
 
 logging = RankingLogger(__name__).get_logger()
@@ -41,38 +41,50 @@ class RankingSystem:
             logging.debug(f"Run an loop in: {60 - sleep_duration} seconds")
 
             last_users = {platform: [] for platform in self.platforms}
+
             for platform in self.platforms:
-                connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
-                if datetime.now().minute == 0:
-                    self.database.log_usage_stats(
-                        user_count=len(connected_users),
-                        platform=platform
-                    )
+                try:
+                    connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
+                    if datetime.now().minute == 0:
+                        self.database.log_usage_stats(
+                            user_count=len(connected_users),
+                            platform=platform
+                        )
 
-                if connected_users:
-                    for user_id in connected_users:
-                        if user_id not in last_users[platform]:
-                            self.database.update_user_name(user_id, names[user_id], platform)
-                            self.database.update_login_streak(user_id, platform)    
+                    if connected_users and names:
+                        for user_id in connected_users:
+                            if user_id not in last_users[platform]:
+                                self.database.update_user_name(user_id, names[user_id], platform)
+                                self.database.update_login_streak(user_id, platform)    
 
-                    last_users[platform] = connected_users
-                    self.database.update_times(connected_users, platform)
-                    self.database.update_heatmap(connected_users, platform)
-                    upranked_user = self.database.update_ranks(connected_users, platform)
-                    for user_id, level in upranked_user:
-                        if platform == 'discord':
-                            self.dc.loop.create_task(self.dc.set_ranks(user_id, level=level))
-                        else:
-                            self.ts.set_ranks(user_id, level=level)
+                        last_users[platform] = connected_users
+                        self.database.update_times(connected_users, platform)
+                        self.database.update_heatmap(connected_users, platform)
+                        upranked_user = self.database.update_ranks(connected_users, platform)
+                        for user_id, level in upranked_user:
+                            if platform == 'discord':
+                                self.dc.loop.create_task(self.dc.set_ranks(user_id, level=level))
+                            else:
+                                self.ts.set_ranks(user_id, level=level)
 
-                    upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
-                    for user_id, division in upranked_season_user:
-                        if platform == 'discord':
-                            self.dc.loop.create_task(self.dc.set_ranks(user_id, division=division))
-                        else:
-                            self.ts.set_ranks(user_id, division=division)
+                        upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
+                        for user_id, division in upranked_season_user:
+                            if platform == 'discord':
+                                self.dc.loop.create_task(self.dc.set_ranks(user_id, division=division))
+                            else:
+                                self.ts.set_ranks(user_id, division=division)
+                except DatabaseConnectionError:
+                    logging.error("Database connection error - sleeping and retrying")
+                    time.sleep(10)
+                    continue
 
-                self.redis.set(f'{platform}:online_users', json.dumps(connected_users))
+                try:
+                    self.redis.set(f'{platform}:online_users', json.dumps(connected_users))
+                except redis.ConnectionError as e:
+                    logging.error(f"Redis connection error: {e}. Waiting and retrying")
+                    time.sleep(10)
+                    continue
+                
 
     def run(self) -> bool:
         """Main runner function"""         
@@ -88,7 +100,8 @@ class RankingSystem:
         try:
             self.main_loop()
         except Exception as e:
-            logging.error(f"Unexpected error: {e}")
+            import traceback
+            logging.error(f"Unexpected error: {e}\nStack trace:\n{traceback.format_exc()}")
         finally:
             self.shutdown()
 
@@ -102,7 +115,7 @@ class RankingSystem:
         try:
             if os.path.exists(Config.PID_FILE):
                 os.remove(Config.PID_FILE)
-                logging.info(f"Removed PID file {Config.PID_FILE}")
+                logging.debug(f"Removed PID file {Config.PID_FILE}")
         except Exception as e:
             logging.error(f"Failed to remove PID file: {e}")
 
