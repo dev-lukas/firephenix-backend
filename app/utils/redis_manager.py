@@ -1,4 +1,4 @@
-from datetime import time
+import time
 import redis
 import json
 from app.config import Config
@@ -50,7 +50,7 @@ class RedisManager:
         self.publish_command(
             platform, 
             'create_owned_channel', 
-            user_id=user_id, 
+            platform_id=user_id, 
             channel_name=channel_name,
             message_id=message_id
         )

@@ -208,11 +208,8 @@ class RankingSystem:
                 
                 if self.ts:
                     result = self.ts.create_owned_channel(user_id, channel_name)
-                    self.redis.set(
-                        message_id,
-                        json.dumps({'channel_id': result}),
-                        ex=30
-                    )
+                    json_data = json.dumps({'channel_id': result})
+                    self.redis.set(message_id, json_data, ex=30)
 
             elif command == 'check_ranks':
                 user_id = data.get('platform_id')

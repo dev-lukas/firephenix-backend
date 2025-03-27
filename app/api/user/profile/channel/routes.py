@@ -46,10 +46,9 @@ def create_channel():
         }), 400
     
     if platform == 'discord':
-        channel_id = redis_manager.publish_command('discord', 'create_owned_channel', user_id=discord_id, channel_name=f"{name}'s Channel")
+        channel_id = redis_manager.create_owned_channel('discord', discord_id, f"{name}'s Channel")
     else:
-        channel_id = redis_manager.publish_command('teamspeak', 'create_owned_channel', user_id=teamspeak_id, channel_name=f"{name}'s Channel")
-
+        channel_id = redis_manager.create_owned_channel('teamspeak', teamspeak_id, f"{name}'s Channel")
     if not channel_id:
         return jsonify({'error': 'Error creating channel'}), 500
 
