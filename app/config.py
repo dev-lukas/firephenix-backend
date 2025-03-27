@@ -32,6 +32,7 @@ class Config:
     REDIS_HOST = 'localhost'
     REDIS_PORT = 6379
     REDIS_DB = 0
+    REDIS_UPDATE_INTERVAL = 2
     # Limiter
     LIMITER_STORAGE_URI="redis://localhost:6379"
     # Lock Socket - needed for Cross-Platform Locking

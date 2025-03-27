@@ -33,18 +33,40 @@ class RankingSystem:
 
     def main_loop(self):
         """Main loop for the ranksystem"""
+        
         while self.running:
             now = datetime.now()
-            next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            sleep_duration = (next_run - now).total_seconds()
-            time.sleep(max(0, sleep_duration))
-            logging.debug(f"Run an loop in: {60 - sleep_duration} seconds")
-
-            last_users = {platform: [] for platform in self.platforms}
-
-            for platform in self.platforms:
-                try:
+            next_full_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+            time_until_full_run = (next_full_run - now).total_seconds()
+            
+            redis_update_count = max(1, int(time_until_full_run / Config.REDIS_UPDATE_INTERVAL))
+            
+            for _ in range(redis_update_count):
+                if not self.running:
+                    exit()
+                for platform in self.platforms:
                     connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
+                    try:
+                        self.redis.set(f'{platform}:online_users', json.dumps(connected_users))
+                    except redis.ConnectionError as e:
+                        logging.error(f"Redis connection error: {e}")
+                        break
+                
+                time_left = (next_full_run - datetime.now()).total_seconds()
+                if time_left < Config.REDIS_UPDATE_INTERVAL:
+                    break
+                time.sleep(Config.REDIS_UPDATE_INTERVAL)
+            
+            time_left = (next_full_run - datetime.now()).total_seconds()
+            if time_left > 0:
+                time.sleep(time_left)
+            
+            last_users = {platform: [] for platform in self.platforms}
+            
+            for platform in self.platforms:
+                try:    
+                    connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
+                    
                     if datetime.now().minute == 0:
                         self.database.log_usage_stats(
                             user_count=len(connected_users),
@@ -74,17 +96,8 @@ class RankingSystem:
                             else:
                                 self.ts.set_ranks(user_id, division=division)
                 except DatabaseConnectionError:
-                    logging.error("Database connection error - sleeping and retrying")
-                    time.sleep(10)
-                    continue
-
-                try:
-                    self.redis.set(f'{platform}:online_users', json.dumps(connected_users))
-                except redis.ConnectionError as e:
-                    logging.error(f"Redis connection error: {e}. Waiting and retrying")
-                    time.sleep(10)
-                    continue
-                
+                    logging.error("Database connection error")
+                    continue   
 
     def run(self) -> bool:
         """Main runner function"""         

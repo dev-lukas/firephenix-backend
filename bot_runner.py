@@ -148,7 +148,7 @@ def stop_bot():
         else:
             os.kill(pid, signal.SIGTERM)
         
-        max_wait = 60  # seconds
+        max_wait = 5  # seconds
         for _ in range(max_wait):
             if not psutil.pid_exists(pid):
                 logging.debug(f"Bot stopped (PID {pid})")
@@ -173,7 +173,7 @@ def stop_bot():
 def restart_bot():
     """Restart the bot"""
     stop_bot()
-    time.sleep(60) 
+    time.sleep(5) 
     return start_bot()
 
 def check_status():
