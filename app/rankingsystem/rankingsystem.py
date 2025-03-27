@@ -47,7 +47,7 @@ class RankingSystem:
                 for platform in self.platforms:
                     connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
                     try:
-                        self.redis.set(f'{platform}:online_users', json.dumps(connected_users))
+                        self.redis.set(f'{platform}:online_users', json.dumps(connected_users), ex=20)
                     except redis.ConnectionError as e:
                         logging.error(f"Redis connection error: {e}")
                         break
