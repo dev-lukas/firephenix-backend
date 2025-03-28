@@ -39,10 +39,6 @@ class RedisManager:
         if users:
             return json.loads(users)
         return []
-    
-    def set_online_users(self, platform, users):
-        """Update the list of online users for the specified platform"""
-        self.redis.set(f'{platform}:online_users', json.dumps(users))
         
     def create_owned_channel(self, platform, user_id, channel_name):
         """Send command to create an owned channel and wait for response"""
