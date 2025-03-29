@@ -26,6 +26,8 @@ def get_connected_users():
             u.division, 
             u.discord_channel, 
             u.teamspeak_channel,
+            u.discord_moveable,
+            u.teamspeak_moveable,
             COALESCE(SUM(CASE WHEN t.platform = 'discord' THEN t.total_time ELSE 0 END) + 
                      SUM(CASE WHEN t.platform = 'teamspeak' THEN t.total_time ELSE 0 END), 0) as total_time,
             COALESCE(SUM(CASE WHEN t.platform = 'discord' THEN t.daily_time ELSE 0 END) + 
@@ -156,10 +158,12 @@ def get_connected_users():
             'division': user_data[4],
             'discord_channel': user_data[5],
             'teamspeak_channel': user_data[6],
-            'total_time': int(user_data[7]),
-            'daily_time': int(user_data[8]),
-            'weekly_time': int(user_data[9]),
-            'monthly_time': int(user_data[10]),
+            'discord_moveable': bool(user_data[7]),
+            'teamspeak_moveable': bool(user_data[8]),
+            'total_time': int(user_data[9]),
+            'daily_time': int(user_data[10]),
+            'weekly_time': int(user_data[11]),
+            'monthly_time': int(user_data[12]),
             'time_to_next_level': int(time_to_next),
             'activity_heatmap': {
                 'data': heatmap

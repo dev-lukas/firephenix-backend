@@ -196,6 +196,36 @@ class RankingSystem:
                 if self.dc:
                     self.dc.bot.loop.create_task(self.dc.check_ranks(int(user_id)))  
 
+            elif command == 'add_move_shield':
+                user_id = data.get('platform_id')
+                message_id = data.get('message_id')
+                if self.dc:
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.dc.set_user_group(int(user_id), Config.DISCORD_MOVE_BLOCK_ID),
+                        self.dc.bot.loop
+                    ).result()
+
+                    self.redis.set(
+                        message_id,
+                        json.dumps({'result': result}),
+                        ex=30
+                    )
+
+            elif command == 'remove_move_shield':
+                user_id = data.get('platform_id')
+                message_id = data.get('message_id')
+                if self.dc:
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.dc.remove_user_group(int(user_id), Config.DISCORD_MOVE_BLOCK_ID),
+                        self.dc.bot.loop
+                    ).result()
+
+                    self.redis.set(
+                        message_id,
+                        json.dumps({'result': result}),
+                        ex=30
+                    )
+
         except Exception as e:
             logging.error(f"Error handling Discord command: {e}")
 
@@ -227,7 +257,23 @@ class RankingSystem:
             elif command == 'check_ranks':
                 user_id = data.get('platform_id')
                 if self.ts:
-                    self.ts.check_ranks(user_id)  
+                    self.ts.check_ranks(user_id)
+
+            elif command == 'add_move_shield':
+                user_id = data.get('platform_id')
+                message_id = data.get('message_id')
+                if self.ts:
+                    result = self.ts.set_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
+                    json_data = json.dumps({'result': result})
+                    self.redis.set(message_id, json_data, ex=30)
+
+            elif command == 'remove_move_shield':
+                user_id = data.get('platform_id')
+                message_id = data.get('message_id')
+                if self.ts:
+                    result = self.ts.remove_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
+                    json_data = json.dumps({'result': result})
+                    self.redis.set(message_id, json_data, ex=30)
 
         except Exception as e:
             logging.error(f"Error handling TeamSpeak command: {e}")

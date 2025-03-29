@@ -4,7 +4,7 @@ from discord.ext import commands
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.rankingsystem.bots.discord.client_manager import ClientManager
-from app.rankingsystem.bots.discord.utils import set_ranks, send_verification, create_owned_channel
+from app.rankingsystem.bots.discord.utils import set_ranks, send_verification, create_owned_channel, set_user_group, remove_user_group
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -71,3 +71,11 @@ class DiscordBot:
     async def create_owned_channel(self, user_id: int, channel_name: str) -> int:
         """Creates a permanent voice channel with owner permissions"""
         return await create_owned_channel(self.bot, user_id, channel_name)
+    
+    async def set_user_group(self, user_id: int, group_id: int) -> bool:
+        """Sets a specific user group for a given user"""
+        return await set_user_group(self.bot, user_id, group_id)
+    
+    async def remove_user_group(self, user_id: int, group_id: int) -> bool:
+        """Remove a specific user group for a given user"""
+        return await remove_user_group(self.bot, user_id, group_id)

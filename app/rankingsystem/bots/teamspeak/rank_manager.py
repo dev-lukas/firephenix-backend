@@ -93,6 +93,51 @@ class RankManager:
             logging.error(f"Rank update failed for user {client_id}: {e}")
             return None
     
+    def set_server_group(self, client_id, group_id):
+        """Set a specific server group for a user"""
+        try:
+            with self.connection_manager.connect() as ts3conn:
+                db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
+                cldbid = db_info.get("cldbid")
+                
+                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+                
+                if group_id in group_ids:
+                    return True
+                
+                ts3conn.exec_("servergroupaddclient", sgid=group_id, cldbid=cldbid)
+                logging.debug(f"Set server group {group_id} for user {client_id}")
+                
+                return True
+                
+        except Exception as e:
+            logging.error(f"Failed to set server group for user {client_id}: {e}")
+            return False
+        
+    def remove_server_group(self, client_id, group_id):
+        """Remove a specific server group from a user"""
+        try:
+            with self.connection_manager.connect() as ts3conn:
+                db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
+                cldbid = db_info.get("cldbid")
+                
+                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+                
+                if group_id not in group_ids:
+                    return True
+                
+                ts3conn.exec_("servergroupdelclient", sgid=group_id, cldbid=cldbid)
+                logging.debug(f"Removed server group {group_id} from user {client_id}")
+                
+                return True
+                
+        except Exception as e:
+            logging.error(f"Failed to remove server group for user {client_id}: {e}")
+            return False
+    
+
     def _update_server_group(self, ts3conn, cldbid, group_map, new_value, rank_type, client_id):
         """Update a specific server group type for a user"""
         try:

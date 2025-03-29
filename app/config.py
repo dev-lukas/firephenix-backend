@@ -25,6 +25,7 @@ class Config:
     TS3_PASSWORD=os.getenv('TS3_PASSWORD')
     TS3_PARENT_CHANNEL = 4
     TS3_OWNER_GROUP_ID = 5
+    TS3_MOVE_BLOCK_ID = 40
     # Database
     DB_HOST="127.0.0.1"
     DB_PORT="3306"

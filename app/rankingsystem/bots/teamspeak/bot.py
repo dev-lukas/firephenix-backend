@@ -92,10 +92,18 @@ class TeamspeakBot:
         """Update user ranks in the TeamSpeak server"""
         return self.rank_manager.set_ranks(client_id, level, division)
     
-    def check_ranks(self, user_id, check_type="both"):
+    def check_ranks(self, user_id):
         """Check if user has the correct rank and/or division roles and update if necessary"""
         with self.connection_manager.connect() as ts3conn:
             return self.rank_manager.check_user_roles(user_id, ts3conn)
+
+    def set_server_group(self, client_id, group_id):
+        """Set a server group for a user"""
+        return self.rank_manager.set_server_group(client_id, group_id)
+    
+    def remove_server_group(self, client_id, group_id):
+        """Remove a server group from a user"""
+        return self.rank_manager.remove_server_group(client_id, group_id)
 
     def stop(self):
         """Gracefully stop the bot"""

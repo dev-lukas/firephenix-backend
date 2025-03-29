@@ -28,7 +28,7 @@ class RedisManager:
         self._initialized = True
         logging.info("Redis manager initialized")
     
-    def publish_command(self, platform, command, **kwargs):
+    def publish_command(self, platform: str, command, **kwargs):
         """Publish a command to the specified platform channel"""
         message = {'command': command, **kwargs}
         self.redis.publish(f'{platform}:commands', json.dumps(message))
@@ -40,7 +40,7 @@ class RedisManager:
             return json.loads(users)
         return []
         
-    def create_owned_channel(self, platform, user_id, channel_name):
+    def create_owned_channel(self, platform: str, user_id, channel_name: str):
         """Send command to create an owned channel and wait for response"""
         message_id = f"{platform}:channel:{user_id}:{int(time.time())}"
         self.publish_command(
@@ -59,3 +59,27 @@ class RedisManager:
             time.sleep(1)
             
         return None
+    
+    def set_move_shield(self, platform: str, user_id, add: bool):
+        """Send command to add or remove MoveShield and wait for response"""
+        message_id = f"{platform}:moveshield:{user_id}:{int(time.time())}"
+        if add:
+            command = 'add_move_shield'
+        else:
+            command = 'remove_move_shield'
+        self.publish_command(
+            platform, 
+            command, 
+            platform_id=user_id, 
+            add=add,
+            message_id=message_id
+        )
+        
+        for _ in range(30):
+            result = self.redis.get(message_id)
+            if result:
+                self.redis.delete(message_id)
+                return json.loads(result).get('result')
+            time.sleep(1)
+            
+        return False

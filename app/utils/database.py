@@ -67,6 +67,8 @@ class DatabaseManager:
                     division INT DEFAULT 1,
                     discord_channel BIGINT,
                     teamspeak_channel BIGINT,
+                    discord_moveable BOOL DEFAULT 1,
+                    teamspeak_moveable BOOL DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_steam (steam_id),
                     INDEX idx_discord (discord_id),

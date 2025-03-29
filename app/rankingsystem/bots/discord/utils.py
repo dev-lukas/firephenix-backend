@@ -71,8 +71,92 @@ async def set_ranks(bot, user_id, level: int = None, division: int = None):
     except Exception as e:
         logging.error(f"Error setting roles for user {user_id}: {e}")
         return None
+    
+async def set_user_group(bot, user_id: int, group_id: int) -> bool:
+    """
+    Set a specific server group for a user.
+    
+    Args:
+        bot: Discord bot instance
+        user_id: Discord user ID
+        group_id: Server group ID to set
+    
+    Returns:
+        bool: True if successful, None if an error occurred
+    """
+    guild = bot.get_guild(Config.DISCORD_GUILD_ID)
+    if not guild:
+        logging.error("Guild not found")
+        return False
+    
+    try:
+        member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        logging.error(f"User {user_id} not found in guild")
+        return False
+    except Exception as e:
+        logging.error(f"Error fetching member {user_id}: {e}")
+        return False
+    
+    try:
+        group_role = discord.utils.get(guild.roles, id=group_id)
+        if group_role:
+            await member.add_roles(group_role)
+            logging.debug(f"User {user_id} added to group {group_id}")
+            return True
+        else:
+            logging.error(f"Could not find group role for group {group_id}")
+            return False
+    except discord.Forbidden:
+        logging.error(f"Bot lacks permission to modify roles for user {user_id}")
+        return False
+    except Exception as e:
+        logging.error(f"Error setting group for user {user_id}: {e}")
+        return False
 
-async def send_verification(bot, user_id, code) -> bool:
+async def remove_user_group(bot, user_id: int, group_id: int) -> bool:
+    """
+    Remove a specific server group from a user.
+    
+    Args:
+        bot: Discord bot instance
+        user_id: Discord user ID
+        group_id: Server group ID to remove
+    
+    Returns:
+        bool: True if successful, None if an error occurred
+    """
+    guild = bot.get_guild(Config.DISCORD_GUILD_ID)
+    if not guild:
+        logging.error("Guild not found")
+        return False
+    
+    try:
+        member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        logging.error(f"User {user_id} not found in guild")
+        return False
+    except Exception as e:
+        logging.error(f"Error fetching member {user_id}: {e}")
+        return False
+    
+    try:
+        group_role = discord.utils.get(guild.roles, id=group_id)
+        if group_role:
+            await member.remove_roles(group_role)
+            logging.debug(f"User {user_id} removed from group {group_id}")
+            return True
+        else:
+            logging.error(f"Could not find group role for group {group_id}")
+            return False
+    except discord.Forbidden:
+        logging.error(f"Bot lacks permission to modify roles for user {user_id}")
+        return False
+    except Exception as e:
+        logging.error(f"Error removing group for user {user_id}: {e}")
+        return False   
+
+async def send_verification(bot, user_id: int, code: int) -> bool:
     """Send verification code to Discord user"""
     try:
         user = await bot.fetch_user(user_id)
