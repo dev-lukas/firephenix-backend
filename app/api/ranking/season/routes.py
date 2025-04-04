@@ -5,9 +5,9 @@ from app.utils.security import limiter, handle_errors
 from datetime import datetime
 
 redis_manager = RedisManager()
-ranking_bp = Blueprint('ranking', __name__)
+ranking_season_bp = Blueprint('ranking_season', __name__)
 
-@ranking_bp.route('/api/ranking/season', methods=['GET'])
+@ranking_season_bp.route('/api/ranking/season', methods=['GET'])
 @limiter.limit("10 per minute")
 @handle_errors
 def get_ranking():
@@ -65,7 +65,7 @@ def get_ranking():
         count_query += " AND name LIKE ?"
         query += " AND name LIKE ?"
         params.append(f"%{search}%")
-    query += " ORDER BY minutes DESC LIMIT 50 OFFSET ?"
+    query += " ORDER BY minutes DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     total_count = db.execute_query(count_query, params[:-2] if search else None)[0][0]
