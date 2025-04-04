@@ -1,13 +1,14 @@
 from flask import Blueprint, jsonify, request
 from app.utils.database import DatabaseManager
 from app.utils.redis_manager import RedisManager
-from app.utils.security import limiter
+from app.utils.security import limiter, handle_errors
 
 redis_manager = RedisManager()
 
 user_online_bp = Blueprint('/api/user/online', __name__)
 
 @user_online_bp.route('/api/user/online', methods=['GET'])
+@handle_errors
 @limiter.limit("10 per minute")
 def get_connected_users():
     platform = request.args.get('platform')

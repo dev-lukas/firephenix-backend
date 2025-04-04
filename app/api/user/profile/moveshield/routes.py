@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
-from app.utils.security import limiter, login_required
+from app.utils.security import limiter, login_required, handle_errors
 from app.utils.redis_manager import RedisManager
 
 user_profile_moveshield_bp = Blueprint('/api/user/profile/moveshield/', __name__)
@@ -9,6 +9,7 @@ redis_manager = RedisManager()
 
 @user_profile_moveshield_bp.route('/api/user/profile/moveshield', methods=['POST'])
 @login_required
+@handle_errors
 @limiter.limit("1 per minute")
 def set_move_shield():
     platform = request.json.get('platform')
@@ -61,6 +62,7 @@ def set_move_shield():
 
 @user_profile_moveshield_bp.route('/api/user/profile/moveshield', methods=['DELETE'])
 @login_required
+@handle_errors
 @limiter.limit("1 per minute")
 def remove_move_shield():
     platform = request.json.get('platform')

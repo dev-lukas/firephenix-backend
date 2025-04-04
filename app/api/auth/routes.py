@@ -3,11 +3,12 @@ from flask import Blueprint, request, redirect, session, jsonify
 import requests
 from urllib.parse import urlencode
 from app.config import Config
-from app.utils.security import limiter
+from app.utils.security import limiter, handle_errors
 
 auth_bp = Blueprint('/api/auth', __name__)
 
 @auth_bp.route('/api/auth')
+@handle_errors
 @limiter.limit("3 per minute")
 def steam_login():
     params = {
@@ -21,6 +22,7 @@ def steam_login():
     return redirect(f'{Config.STEAM_OPENID_URL}?{urlencode(params)}')
 
 @auth_bp.route('/api/auth/callback')
+@handle_errors
 def steam_callback():
     try:
         params = {
@@ -50,6 +52,7 @@ def steam_callback():
         return jsonify({'error': str(e)}), 500
 
 @auth_bp.route('/api/auth/check')
+@handle_errors
 def check_auth():
     """Check if user is authenticated with steam"""
     response = jsonify({
@@ -62,6 +65,7 @@ def check_auth():
     return response
 
 @auth_bp.route('/api/auth/logout')
+@handle_errors
 def logout():
     """Logout user"""
     session.clear()

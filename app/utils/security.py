@@ -5,6 +5,10 @@ from app.config import Config
 import random
 from functools import wraps
 
+from app.utils.logger import RankingLogger
+
+logging = RankingLogger(__name__).get_logger()
+
 limiter = Limiter(
     get_remote_address,
     storage_uri=Config.LIMITER_STORAGE_URI,
@@ -19,6 +23,20 @@ def login_required(f):
         if 'steam_id' not in session:
             return jsonify({'error': 'Unauthorized'}), 401
         return f(*args, **kwargs)
+    return decorated_function
+
+def handle_errors(f):
+    """
+    Decorator to handle exceptions in routes and return appropriate error responses.
+    Usage: @handle_errors
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            logging.error(f"Error in {f.__name__}: {e}")
+            return jsonify({'error': 'Internal Server Error'}), 500
     return decorated_function
 
 def generate_verification_code():

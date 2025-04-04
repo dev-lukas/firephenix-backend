@@ -7,15 +7,15 @@ from datetime import datetime
 redis_manager = RedisManager()
 ranking_bp = Blueprint('ranking', __name__)
 
-@ranking_bp.route('/api/ranking', methods=['GET'])
-@handle_errors
+@ranking_bp.route('/api/ranking/season', methods=['GET'])
 @limiter.limit("10 per minute")
+@handle_errors
 def get_ranking():
     page = int(request.args.get('page', 1))
-    limit = min(int(request.args.get('limit', 10)), 50)
     search = request.args.get('search', '')
     
-    offset = (page - 1) * limit
+    limit = 50
+    offset = (page - 1)
     
     db = DatabaseManager()
     
@@ -33,7 +33,7 @@ def get_ranking():
         LEFT JOIN time AS teamspeak_time 
             ON user.teamspeak_id = teamspeak_time.platform_uid 
             AND teamspeak_time.platform = 'teamspeak'
-        WHERE (COALESCE(discord_time.total_time, 0) + COALESCE(teamspeak_time.total_time, 0)) > 0
+        WHERE (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) > 0
     """
 
     query = """
@@ -42,12 +42,12 @@ def get_ranking():
             COALESCE(user.name, 'Unknown') AS name,
             COALESCE(user.level, 1) AS level,
             COALESCE(user.division, 1) AS division,
-            (COALESCE(discord_time.total_time, 0) + COALESCE(teamspeak_time.total_time, 0)) AS minutes,
+            (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) AS minutes,
             GREATEST(
                 COALESCE(discord_time.last_update, '1970-01-01'), 
                 COALESCE(teamspeak_time.last_update, '1970-01-01')
             ) AS last_update,
-            RANK() OVER (ORDER BY (COALESCE(discord_time.total_time, 0) + COALESCE(teamspeak_time.total_time, 0)) DESC) AS rank,
+            RANK() OVER (ORDER BY (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) DESC) AS rank,
             user.discord_id AS discord_uid,
             user.teamspeak_id AS teamspeak_uid
         FROM user
@@ -57,7 +57,7 @@ def get_ranking():
         LEFT JOIN time AS teamspeak_time 
             ON user.teamspeak_id = teamspeak_time.platform_uid 
             AND teamspeak_time.platform = 'teamspeak'
-        WHERE (COALESCE(discord_time.total_time, 0) + COALESCE(teamspeak_time.total_time, 0)) > 0
+        WHERE (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) > 0
         """
     
     params = []
@@ -65,7 +65,7 @@ def get_ranking():
         count_query += " AND name LIKE ?"
         query += " AND name LIKE ?"
         params.append(f"%{search}%")
-    query += " ORDER BY minutes DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY minutes DESC LIMIT 50 OFFSET ?"
     params.extend([limit, offset])
 
     total_count = db.execute_query(count_query, params[:-2] if search else None)[0][0]

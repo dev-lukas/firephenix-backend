@@ -1,13 +1,14 @@
 from flask import Blueprint, jsonify, session
 from app.config import Config
 from app.utils.database import DatabaseManager
-from app.utils.security import login_required
+from app.utils.security import login_required, handle_errors
 from app.utils.security import limiter
 
 user_bp = Blueprint('/api/user', __name__)
 
 @user_bp.route('/api/user', methods=['GET'])
 @login_required
+@handle_errors
 @limiter.limit("10 per minute")
 def get_connected_users():
     steam_id = session.get('steam_id')

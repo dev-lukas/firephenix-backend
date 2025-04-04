@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
-from app.utils.security import limiter, login_required, generate_verification_code
+from app.utils.security import limiter, login_required, generate_verification_code, handle_errors
 from app.utils.redis_manager import RedisManager
 
 user_profile_verification_bp = Blueprint('/api/user/profile/verification/', __name__)
@@ -9,6 +9,7 @@ redis_manager = RedisManager()
 
 @user_profile_verification_bp.route('/api/user/profile/verification/initiate', methods=['POST'])
 @login_required
+@handle_errors
 @limiter.limit("3 per 10 minutes")
 def initiate_verification():
     platform = request.json.get('platform')
@@ -61,6 +62,7 @@ def initiate_verification():
 
 @user_profile_verification_bp.route('/api/user/profile/verification/verify', methods=['POST'])
 @login_required
+@handle_errors
 @limiter.limit("3 per minute")
 def verify_code():
     code = request.json.get('code')
