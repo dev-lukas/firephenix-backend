@@ -12,7 +12,7 @@ ranking_stats_bp = Blueprint('ranking_stats', __name__)
 @limiter.limit("10 per minute")
 def get_stats():
     db = DatabaseManager()
-    query = """
+    users_time_query = """
     SELECT 
         COUNT(DISTINCT user.id) as total_users,
         COALESCE(SUM(discord_time.total_time), 0) + 
@@ -28,11 +28,40 @@ def get_stats():
         OR teamspeak_time.platform_uid IS NOT NULL
     """
     
-    result = db.execute_query(query)
+    result = db.execute_query(users_time_query)
     if result and result[0]:
         total_users, total_time = result[0]
     else:
         total_users, total_time = 0, 0
+    
+    # Get favorite day of week across all users
+    favorite_day_query = """
+    SELECT 
+        day_of_week, 
+        SUM(activity_minutes) as total_activity
+    FROM activity_heatmap
+    GROUP BY day_of_week
+    ORDER BY total_activity DESC
+    LIMIT 1
+    """
+    
+    day_result = db.execute_query(favorite_day_query)
+    if day_result and day_result[0]:
+        favorite_day = day_result[0][0]
+    else:
+        favorite_day = 0
+    
+    # Get total logins across all users
+    total_logins_query = """
+    SELECT SUM(logins) as total_logins
+    FROM login_streak
+    """
+    
+    logins_result = db.execute_query(total_logins_query)
+    if logins_result and logins_result[0] and logins_result[0][0]:
+        total_logins = logins_result[0][0]
+    else:
+        total_logins = 0
 
     db.close()
 
@@ -44,7 +73,9 @@ def get_stats():
     rankings = {
         'total_users': total_users,
         'total_time': total_time,
-        'online_users': online_users
+        'online_users': online_users,
+        'favorite_day': favorite_day,
+        'total_logins': total_logins
     }
 
     return jsonify(rankings)

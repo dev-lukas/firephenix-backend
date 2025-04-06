@@ -22,25 +22,30 @@ def get_ranking():
         LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
         WHERE COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) > 0
+    ),
+    ranked_users AS (
+        SELECT 
+            u.id,
+            RANK() OVER (ORDER BY (COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0)) DESC) as rank,
+            COALESCE(u.name, 'Unknown') as name,
+            COALESCE(u.level, 1) as level,
+            COALESCE(u.division, 1) as division,
+            COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) as total_time,
+            COALESCE(d.monthly_time, 0) + COALESCE(t.monthly_time, 0) as monthly_time,
+            COALESCE(d.weekly_time, 0) + COALESCE(t.weekly_time, 0) as weekly_time,
+            u.discord_id,
+            u.teamspeak_id
+        FROM user u
+        LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
+        LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
     )
     SELECT 
-        u.id,
-        RANK() OVER (ORDER BY (COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0)) DESC) as rank,
-        COALESCE(u.name, 'Unknown') as name,
-        COALESCE(u.level, 1) as level,
-        COALESCE(u.division, 1) as division,
-        COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) as total_time,
-        COALESCE(d.monthly_time, 0) + COALESCE(t.monthly_time, 0) as monthly_time,
-        COALESCE(d.weekly_time, 0) + COALESCE(t.weekly_time, 0) as weekly_time,
-        u.discord_id,
-        u.teamspeak_id,
+        r.*,
         (SELECT total_users FROM user_stats) as total_users,
         (SELECT mean_time FROM user_stats) as mean_time,
         (SELECT best_time FROM user_stats) as best_time
-    FROM user u
-    LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
-    LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
-    WHERE u.id = ?
+    FROM ranked_users r
+    WHERE r.id = ?
     """
 
     streak_query = """
