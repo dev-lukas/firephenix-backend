@@ -16,6 +16,7 @@ from app.api.user.profile.verification.routes import user_profile_verification_b
 from app.api.user.profile.channel.routes import user_profile_channel_bp
 from app.api.user.profile.moveshield.routes import user_profile_moveshield_bp
 from app.api.ranking.season.routes import ranking_season_bp
+from app.api.ranking.user.routes import ranking_user_bp
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -53,6 +54,7 @@ def create_app():
     app.register_blueprint(ranking_top_bp)
     app.register_blueprint(ranking_season_bp)
     app.register_blueprint(ranking_profile_bp)
+    app.register_blueprint(ranking_user_bp)
     app.register_blueprint(user_profile_verification_bp)
     app.register_blueprint(user_profile_channel_bp)
     app.register_blueprint(user_profile_moveshield_bp)
