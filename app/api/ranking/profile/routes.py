@@ -33,6 +33,7 @@ def get_ranking():
             COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) as total_time,
             COALESCE(d.monthly_time, 0) + COALESCE(t.monthly_time, 0) as monthly_time,
             COALESCE(d.weekly_time, 0) + COALESCE(t.weekly_time, 0) as weekly_time,
+            COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) as season_time,
             u.discord_id,
             u.teamspeak_id
         FROM user u
@@ -65,7 +66,7 @@ def get_ranking():
         db.close()
         return jsonify({'error': 'User not found'}), 404
 
-    (id, rank, name, level, division, total_time, monthly_time, weekly_time, 
+    (id, rank, name, level, division, total_time, monthly_time, weekly_time, season_time,
         discord_id, teamspeak_id, total_users, mean_time, best_time) = user_data
 
     db.cursor.execute(streak_query, (discord_id, teamspeak_id))
@@ -125,16 +126,39 @@ def get_ranking():
     for row in heatmap_data:
         if row[0] is not None and row[1] is not None:
             heatmap[row[0]][row[1]] = row[2]
+
+    time_to_next_level = 0
+    time_to_next_division = 0
+    if level < 25:
+        next_level_req = Config.get_level_requirement(level + 1)
+        time_to_next_level = max(0, next_level_req - total_time)
+    if division < 5:
+        next_division_req = Config.get_division_requirement(division + 1)
+        time_to_next_division = max(0, next_division_req - season_time)
+    elif division == 5:
+        div6_query = """
+        SELECT COUNT(u.id), MIN(COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0))
+        FROM user u
+        LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
+        LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
+        WHERE u.division = 6
+        """
+        db.cursor.execute(div6_query)
+        div6_count, lowest_div6_time = db.cursor.fetchone()
+
+        if div6_count is None:
+            div6_count = 0
+            
+        if div6_count >= Config.TOP_DIVISION_PLAYER_AMOUNT and lowest_div6_time is not None:
+            time_to_next_division = max(0, lowest_div6_time - season_time + 1) 
+        else:
+            next_division_req = Config.get_division_requirement(5)
+            time_to_next_division = max(0, next_division_req - season_time)
+        
+    rank_percentage = (rank / total_users) * 100 if total_users > 0 else 0
     
     db.close()
 
-    time_to_next = 0
-    if level < 25:
-        next_level_req = Config.get_level_requirement(level + 1)
-        time_to_next = max(0, next_level_req - total_time)
-    
-    rank_percentage = (rank / total_users) * 100 if total_users > 0 else 0
-    
     return jsonify({
         'id': id,
         'rank': rank,
@@ -144,7 +168,9 @@ def get_ranking():
         'total_time': total_time,
         'monthly_time': monthly_time,
         'weekly_time': weekly_time,
-        'time_to_next_level': time_to_next,
+        'season_time': season_time,
+        'time_to_next_level': time_to_next_level,
+        'time_to_next_division': time_to_next_division,
         'rank_percentage': rank_percentage,
         'mean_total_time': mean_time,
         'best_player_time': best_time,

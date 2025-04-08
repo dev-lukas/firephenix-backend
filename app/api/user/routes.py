@@ -36,7 +36,9 @@ def get_connected_users():
             COALESCE(SUM(CASE WHEN t.platform = 'discord' THEN t.weekly_time ELSE 0 END) + 
                      SUM(CASE WHEN t.platform = 'teamspeak' THEN t.weekly_time ELSE 0 END), 0) as weekly_time,
             COALESCE(SUM(CASE WHEN t.platform = 'discord' THEN t.monthly_time ELSE 0 END) + 
-                     SUM(CASE WHEN t.platform = 'teamspeak' THEN t.monthly_time ELSE 0 END), 0) as monthly_time
+                     SUM(CASE WHEN t.platform = 'teamspeak' THEN t.monthly_time ELSE 0 END), 0) as monthly_time,
+            COALESCE(SUM(CASE WHEN t.platform = 'discord' THEN t.season_time ELSE 0 END) + 
+                     SUM(CASE WHEN t.platform = 'teamspeak' THEN t.season_time ELSE 0 END), 0) as season_time
         FROM user u
         LEFT JOIN time t ON 
             (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
@@ -146,10 +148,34 @@ def get_connected_users():
                     'longest': longest
                 }
 
-        time_to_next = 0
+        time_to_next_level = 0
+        time_to_next_division = 0
         if user_data[3] < 25:
             next_level_req = Config.get_level_requirement(user_data[3] + 1)
-            time_to_next = max(0, next_level_req - user_data[7])
+            time_to_next_level = max(0, next_level_req - user_data[7])
+        
+        if user_data[4] < 5:
+            next_division_req = Config.get_division_requirement(user_data[4] + 1)
+            time_to_next_division = max(0, next_division_req - int(user_data[13]))
+        elif user_data[4] == 5:
+            div6_query = """
+            SELECT COUNT(u.id), MIN(COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0))
+            FROM user u
+            LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
+            LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
+            WHERE u.division = 6
+            """
+            db.cursor.execute(div6_query)
+            div6_count, lowest_div6_time = db.cursor.fetchone()
+
+            if div6_count is None:
+                div6_count = 0
+                
+            if div6_count >= Config.TOP_DIVISION_PLAYER_AMOUNT and lowest_div6_time is not None:
+                time_to_next_division = max(0, lowest_div6_time - int(user_data[13]) + 1) 
+            else:
+                next_division_req = Config.get_division_requirement(5)
+                time_to_next_division = max(0, next_division_req - int(user_data[13]))
 
         response = jsonify({
             'name': user_data[0],
@@ -165,7 +191,9 @@ def get_connected_users():
             'daily_time': int(user_data[10]),
             'weekly_time': int(user_data[11]),
             'monthly_time': int(user_data[12]),
-            'time_to_next_level': int(time_to_next),
+            'season_time': int(user_data[13]),
+            'time_to_next_level': int(time_to_next_level),
+            'time_to_next_division': int(time_to_next_division),
             'activity_heatmap': {
                 'data': heatmap
             },
