@@ -138,6 +138,20 @@ class DatabaseManager:
                     PRIMARY KEY (platform, platform_uid)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS special_achievements (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    platform ENUM('discord', 'teamspeak') NOT NULL,
+                    platform_id VARCHAR(255) NOT NULL,
+                    achievement_type INT NOT NULL,
+                    awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY unique_user_achievement (platform, platform_id, achievement_type),
+                    INDEX idx_platform_id (platform_id),
+                    INDEX idx_achievement_type (achievement_type)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
+
             self.conn.commit()
         except mariadb.Error as e:
             logging.error(f"Error creating tables: {e}")

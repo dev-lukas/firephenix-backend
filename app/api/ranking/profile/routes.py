@@ -10,6 +10,10 @@ ranking_profile_bp = Blueprint('ranking_profile', __name__)
 @limiter.limit("10 per minute")
 def get_ranking():
     user_id = int(request.args.get('id', 1))
+
+    if not user_id:
+        return jsonify({'error': 'Invalid user ID'}), 400
+    
     db = DatabaseManager()
     
     query = """

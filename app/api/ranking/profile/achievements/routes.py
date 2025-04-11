@@ -1,19 +1,18 @@
-from flask import Blueprint, jsonify, session
+from flask import Blueprint, jsonify, request
 from app.utils.database import DatabaseManager
-from app.utils.security import login_required, handle_errors
+from app.utils.security import handle_errors
 from app.utils.security import limiter
 
-user_achievements_bp = Blueprint('/api/user/achievements', __name__)
+user_ranking_profile_achievements_bp = Blueprint('/api/ranking/profile/achievements', __name__)
 
-@user_achievements_bp.route('/api/user/achievements', methods=['GET'])
-@login_required
+@user_ranking_profile_achievements_bp.route('/api/ranking/profile/achievements', methods=['GET'])
 @handle_errors
 @limiter.limit("10 per minute")
 def get_achievements():
-    steam_id = session.get('steam_id')
+    user_id = int(request.args.get('id', 1))
 
-    if not steam_id:
-        return jsonify({'error': 'No steam ID in session'}), 401
+    if not user_id:
+        return jsonify({'error': 'Invalid user ID'}), 400
     
     db = DatabaseManager()
 
@@ -27,11 +26,11 @@ def get_achievements():
         LEFT JOIN time t ON 
             (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
             (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
-        WHERE u.steam_id = ?
+        WHERE u.id = ?
         GROUP BY u.discord_id, u.teamspeak_id
     """
 
-    results = db.execute_query(query, (steam_id,))
+    results = db.execute_query(query, (user_id,))
 
     if not results:
         return jsonify({'error': 'User has no linked account yet'}), 404
@@ -76,7 +75,7 @@ def get_achievements():
             WHERE platform IN ('discord', 'teamspeak')
         ) h ON (h.platform = 'discord' AND h.platform_uid = u.discord_id)
                 OR (h.platform = 'teamspeak' AND h.platform_uid = u.teamspeak_id)
-        WHERE u.steam_id = ?
+        WHERE u.id = ?
             AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
         GROUP BY h.day_of_week, h.time_category
         ORDER BY h.day_of_week, 
@@ -88,7 +87,7 @@ def get_achievements():
             END
     """
 
-    heatmap_data = db.execute_query(heatmap_query, (steam_id,))
+    heatmap_data = db.execute_query(heatmap_query, (user_id,))
 
     special_achievements_query = """
         SELECT achievement_type
@@ -106,7 +105,7 @@ def get_achievements():
     if teamspeak_id:
         special_achievements_params.append(teamspeak_id)
     else:
-        special_achievements_params.append(None)
+        special_achievements_params.append(None) 
 
     special_achievements_data = []
     if discord_id or teamspeak_id:
@@ -133,7 +132,7 @@ def get_achievements():
         streak_achievement = 2
     elif longest_streak >= 7:
         streak_achievement = 1
-    
+
     login_achievement = 0
     if total_logins >= 3650:
         login_achievement = 4
