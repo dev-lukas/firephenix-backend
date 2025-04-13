@@ -114,6 +114,7 @@ def get_achievements():
     old_member_achievement = 0
     legacy_supporter_achievement = 0
     division_achievement = 0
+    apex_achievement = 0
 
     if special_achievements_data:
         for achievement in special_achievements_data:
@@ -122,8 +123,10 @@ def get_achievements():
                 old_member_achievement = 1
             elif achievement_type == 2:
                 legacy_supporter_achievement = 1
-            elif 101 <= achievement_type <= 107:
+            elif 101 <= achievement_type <= 104:
                 division_achievement = max(division_achievement, achievement_type - 100)
+            elif achievement_type == 200:
+                apex_achievement = 1
 
     streak_achievement = 0
     if longest_streak >= 30:
@@ -131,6 +134,8 @@ def get_achievements():
     elif longest_streak >= 14:
         streak_achievement = 2
     elif longest_streak >= 7:
+        streak_achievement = 2
+    elif longest_streak >= 2:
         streak_achievement = 1
 
     login_achievement = 0
@@ -144,14 +149,14 @@ def get_achievements():
         login_achievement = 1
     
     time_achievement = 0
-    total_time_minutes = total_time / 60 
-    if total_time_minutes >= 60000:
+    total_time_hours = total_time / 60
+    if total_time_hours >= 1000:
         time_achievement = 4
-    elif total_time_minutes >= 6000:
+    elif total_time_hours >= 100:
         time_achievement = 3
-    elif total_time_minutes >= 600:
+    elif total_time_hours >= 10:
         time_achievement = 2
-    elif total_time_minutes >= 60:
+    elif total_time_hours >= 1:
         time_achievement = 1
     
     if not heatmap_data or heatmap_data[0][0] is None:
@@ -201,7 +206,7 @@ def get_achievements():
             'achievement_level': login_achievement
         },
         'time': {
-            'total_minutes': int(total_time_minutes),
+            'total_hours': int(total_time_hours),
             'achievement_level': time_achievement
         },
         'heatmap': {
@@ -216,6 +221,9 @@ def get_achievements():
         },
         'division': {
             'achievement_level': division_achievement
+        },
+        'apex': {
+            'achievement_level': apex_achievement
         }
     })
 

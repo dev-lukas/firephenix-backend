@@ -20,6 +20,7 @@ def get_connected_users():
 
     query = """
         SELECT 
+            u.id,
             u.name, 
             u.discord_id, 
             u.teamspeak_id, 
@@ -92,6 +93,9 @@ def get_connected_users():
             'daily_time': 0,
             'weekly_time': 0,
             'monthly_time': 0,
+            'season_time': 0,
+            'time_to_next_level': 0,
+            'time_to_next_division': 0,
             'activity_heatmap': {
                 'data': {
                     day: {
@@ -108,8 +112,8 @@ def get_connected_users():
         })
     else:
         user_data = results[0]
-        discord_id = str(user_data[1]) if user_data[1] else None
-        teamspeak_id = str(user_data[2]) if user_data[2] else None
+        discord_id = str(user_data[2]) if user_data[2] else None
+        teamspeak_id = str(user_data[3]) if user_data[3] else None
 
         # Get heatmap data
         heatmap_data = db.execute_query(heatmap_query, (steam_id,))
@@ -150,14 +154,14 @@ def get_connected_users():
 
         time_to_next_level = 0
         time_to_next_division = 0
-        if user_data[3] < 25:
-            next_level_req = Config.get_level_requirement(user_data[3] + 1)
-            time_to_next_level = max(0, next_level_req - user_data[7])
+        if user_data[4] < 25:
+            next_level_req = Config.get_level_requirement(user_data[4] + 1)
+            time_to_next_level = max(0, next_level_req - user_data[8])
         
-        if user_data[4] < 5:
-            next_division_req = Config.get_division_requirement(user_data[4] + 1)
-            time_to_next_division = max(0, next_division_req - int(user_data[13]))
-        elif user_data[4] == 5:
+        if user_data[5] < 5:
+            next_division_req = Config.get_division_requirement(user_data[5] + 1)
+            time_to_next_division = max(0, next_division_req - int(user_data[14]))
+        elif user_data[5] == 5:
             div6_query = """
             SELECT COUNT(u.id), MIN(COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0))
             FROM user u
@@ -172,26 +176,27 @@ def get_connected_users():
                 div6_count = 0
                 
             if div6_count >= Config.TOP_DIVISION_PLAYER_AMOUNT and lowest_div6_time is not None:
-                time_to_next_division = max(0, lowest_div6_time - int(user_data[13]) + 1) 
+                time_to_next_division = max(0, lowest_div6_time - int(user_data[14]) + 1) 
             else:
                 next_division_req = Config.get_division_requirement(5)
-                time_to_next_division = max(0, next_division_req - int(user_data[13]))
+                time_to_next_division = max(0, next_division_req - int(user_data[14]))
 
         response = jsonify({
-            'name': user_data[0],
+            'id': user_data[0],
+            'name': user_data[1],
             'discord_id': discord_id,
             'teamspeak_id': teamspeak_id,
-            'level': user_data[3],
-            'division': user_data[4],
-            'discord_channel': user_data[5],
-            'teamspeak_channel': user_data[6],
-            'discord_moveable': bool(user_data[7]),
-            'teamspeak_moveable': bool(user_data[8]),
-            'total_time': int(user_data[9]),
-            'daily_time': int(user_data[10]),
-            'weekly_time': int(user_data[11]),
-            'monthly_time': int(user_data[12]),
-            'season_time': int(user_data[13]),
+            'level': user_data[4],
+            'division': user_data[5],
+            'discord_channel': user_data[6],
+            'teamspeak_channel': user_data[7],
+            'discord_moveable': bool(user_data[8]),
+            'teamspeak_moveable': bool(user_data[9]),
+            'total_time': int(user_data[10]),
+            'daily_time': int(user_data[11]),
+            'weekly_time': int(user_data[12]),
+            'monthly_time': int(user_data[13]),
+            'season_time': int(user_data[14]),
             'time_to_next_level': int(time_to_next_level),
             'time_to_next_division': int(time_to_next_division),
             'activity_heatmap': {
