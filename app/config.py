@@ -75,8 +75,8 @@ class Config:
     DIVISION_REQUIREMENTS = {
         1: 0,
         2: 3000,
-        3: 6000,
-        4: 12000,
+        3: 9000,
+        4: 18000,
         5: 24000
     }
 
