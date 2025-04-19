@@ -181,6 +181,36 @@ def get_connected_users():
                 next_division_req = Config.get_division_requirement(5)
                 time_to_next_division = max(0, next_division_req - int(user_data[14]))
 
+        special_achievements_query = """
+        SELECT achievement_type
+        FROM special_achievements
+        WHERE (platform = 'discord' AND platform_id = ?)
+           OR (platform = 'teamspeak' AND platform_id = ?)
+        """
+
+        special_achievements_params = []
+        if discord_id:
+            special_achievements_params.append(discord_id)
+        else:
+            special_achievements_params.append(None)
+
+        if teamspeak_id:
+            special_achievements_params.append(teamspeak_id)
+        else:
+            special_achievements_params.append(None) 
+
+        special_achievements_data = []
+        if discord_id or teamspeak_id:
+                special_achievements_data = db.execute_query(special_achievements_query, tuple(special_achievements_params))
+
+        best_division_achieved = 0
+
+        if special_achievements_data:
+            for achievement in special_achievements_data:
+                achievement_type = achievement[0]
+                if 101 <= achievement_type <= 106:
+                    best_division_achieved = max(best_division_achieved, achievement_type - 100)
+
         response = jsonify({
             'id': user_data[0],
             'name': user_data[1],
@@ -199,6 +229,7 @@ def get_connected_users():
             'season_time': int(user_data[14]),
             'time_to_next_level': int(time_to_next_level),
             'time_to_next_division': int(time_to_next_division),
+            'best_division_achieved': best_division_achieved,
             'activity_heatmap': {
                 'data': heatmap
             },

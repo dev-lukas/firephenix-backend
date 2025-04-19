@@ -123,7 +123,7 @@ def get_achievements():
                 old_member_achievement = 1
             elif achievement_type == 2:
                 legacy_supporter_achievement = 1
-            elif 101 <= achievement_type <= 104:
+            elif 101 <= achievement_type <= 106:
                 division_achievement = max(division_achievement, achievement_type - 100)
             elif achievement_type == 200:
                 apex_achievement = 1

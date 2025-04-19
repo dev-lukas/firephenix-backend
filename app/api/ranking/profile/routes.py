@@ -160,6 +160,36 @@ def get_ranking():
             time_to_next_division = max(0, next_division_req - season_time)
         
     rank_percentage = (rank / total_users) * 100 if total_users > 0 else 0
+
+    special_achievements_query = """
+        SELECT achievement_type
+        FROM special_achievements
+        WHERE (platform = 'discord' AND platform_id = ?)
+           OR (platform = 'teamspeak' AND platform_id = ?)
+    """
+    
+    special_achievements_params = []
+    if discord_id:
+        special_achievements_params.append(discord_id)
+    else:
+        special_achievements_params.append(None)
+
+    if teamspeak_id:
+        special_achievements_params.append(teamspeak_id)
+    else:
+        special_achievements_params.append(None) 
+
+    special_achievements_data = []
+    if discord_id or teamspeak_id:
+         special_achievements_data = db.execute_query(special_achievements_query, tuple(special_achievements_params))
+
+    best_division_achieved = 0
+
+    if special_achievements_data:
+        for achievement in special_achievements_data:
+            achievement_type = achievement[0]
+            if 101 <= achievement_type <= 106:
+                best_division_achieved = max(best_division_achieved, achievement_type - 100)
     
     db.close()
 
@@ -178,6 +208,7 @@ def get_ranking():
         'rank_percentage': rank_percentage,
         'mean_total_time': mean_time,
         'best_player_time': best_time,
+        'best_division_achieved': best_division_achieved,
         'activity_heatmap': {
             'data': heatmap
         },
