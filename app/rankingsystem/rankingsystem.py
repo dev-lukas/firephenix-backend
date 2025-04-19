@@ -4,7 +4,7 @@ import json
 import os
 import threading
 import time
-import redis
+import valkey
 from app.config import Config
 from app.rankingsystem.bots.discord.bot import DiscordBot
 from app.rankingsystem.bots.teamspeak.bot import TeamspeakBot
@@ -20,13 +20,15 @@ class RankingSystem:
         self.ts = None
         self.dc = None
         self.database = DatabaseManager()
-        self.redis = redis.Redis(
-            host=Config.REDIS_HOST,
-            port=Config.REDIS_PORT,
-            db=Config.REDIS_DB,
+
+        self.valkey = valkey.Valkey(
+            host=Config.VALKEY_HOST,
+            port=Config.VALKEY_PORT,
+            db=Config.VALKEY_DB,
             decode_responses=True
         )
-        self.pubsub = self.redis.pubsub()
+
+        self.pubsub = self.valkey.pubsub()
         self.pubsub_thread = None
         self.running = True
         self.platforms = ['discord', 'teamspeak']
@@ -39,23 +41,23 @@ class RankingSystem:
             next_full_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
             time_until_full_run = (next_full_run - now).total_seconds()
             
-            redis_update_count = max(1, int(time_until_full_run / Config.REDIS_UPDATE_INTERVAL))
+            valkey_update_count = max(1, int(time_until_full_run / Config.VALKEY_UPDATE_INTERVAL))
             
-            for _ in range(redis_update_count):
+            for _ in range(valkey_update_count):
                 if not self.running:
                     exit()
                 for platform in self.platforms:
                     connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
                     try:
-                        self.redis.set(f'{platform}:online_users', json.dumps(connected_users), ex=20)
-                    except redis.ConnectionError as e:
-                        logging.error(f"Redis connection error: {e}")
+                        self.valkey.set(f'{platform}:online_users', json.dumps(connected_users), ex=20)
+                    except valkey.ConnectionError as e:
+                        logging.error(f"Valkey connection error: {e}")
                         break
                 
                 time_left = (next_full_run - datetime.now()).total_seconds()
-                if time_left < Config.REDIS_UPDATE_INTERVAL:
+                if time_left < Config.VALKEY_UPDATE_INTERVAL:
                     break
-                time.sleep(Config.REDIS_UPDATE_INTERVAL)
+                time.sleep(Config.VALKEY_UPDATE_INTERVAL)
             
             time_left = (next_full_run - datetime.now()).total_seconds()
             if time_left > 0:
@@ -160,7 +162,7 @@ class RankingSystem:
             return False
 
     def handle_discord_command(self, message):
-        """Handle Redis commands for Discord bot"""
+        """Handle Valkey commands for Discord bot"""
         if message['type'] != 'message':
             return
             
@@ -185,7 +187,7 @@ class RankingSystem:
                         self.dc.bot.loop
                     ).result()
                     
-                    self.redis.set(
+                    self.valkey.set(
                         message_id,
                         json.dumps({'channel_id': result}),
                         ex=30
@@ -205,7 +207,7 @@ class RankingSystem:
                         self.dc.bot.loop
                     ).result()
 
-                    self.redis.set(
+                    self.valkey.set(
                         message_id,
                         json.dumps({'result': result}),
                         ex=30
@@ -220,7 +222,7 @@ class RankingSystem:
                         self.dc.bot.loop
                     ).result()
 
-                    self.redis.set(
+                    self.valkey.set(
                         message_id,
                         json.dumps({'result': result}),
                         ex=30
@@ -230,7 +232,7 @@ class RankingSystem:
             logging.error(f"Error handling Discord command: {e}")
 
     def handle_teamspeak_command(self, message):
-        """Handle Redis commands for TeamSpeak bot"""
+        """Handle Valkey commands for TeamSpeak bot"""
         if message['type'] != 'message':
             return
             
@@ -252,7 +254,7 @@ class RankingSystem:
                 if self.ts:
                     result = self.ts.create_owned_channel(user_id, channel_name)
                     json_data = json.dumps({'channel_id': result})
-                    self.redis.set(message_id, json_data, ex=30)
+                    self.valkey.set(message_id, json_data, ex=30)
 
             elif command == 'check_ranks':
                 user_id = data.get('platform_id')
@@ -265,7 +267,7 @@ class RankingSystem:
                 if self.ts:
                     result = self.ts.set_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
                     json_data = json.dumps({'result': result})
-                    self.redis.set(message_id, json_data, ex=30)
+                    self.valkey.set(message_id, json_data, ex=30)
 
             elif command == 'remove_move_shield':
                 user_id = data.get('platform_id')
@@ -273,7 +275,7 @@ class RankingSystem:
                 if self.ts:
                     result = self.ts.remove_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
                     json_data = json.dumps({'result': result})
-                    self.redis.set(message_id, json_data, ex=30)
+                    self.valkey.set(message_id, json_data, ex=30)
 
         except Exception as e:
             logging.error(f"Error handling TeamSpeak command: {e}")

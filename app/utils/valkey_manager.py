@@ -1,17 +1,17 @@
 import time
-import redis
 import json
+import valkey
 from app.config import Config
 from app.utils.logger import RankingLogger
 
 logging = RankingLogger(__name__).get_logger()
 
-class RedisManager:
+class ValkeyManager:
     _instance = None
     
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(RedisManager, cls).__new__(cls)
+            cls._instance = super(ValkeyManager, cls).__new__(cls)
             cls._instance._initialized = False
         return cls._instance
     
@@ -19,23 +19,24 @@ class RedisManager:
         if self._initialized:
             return
             
-        self.redis = redis.Redis(
-            host=Config.REDIS_HOST,
-            port=Config.REDIS_PORT,
-            db=Config.REDIS_DB,
+        self.valkey = valkey.Valkey(
+            host=Config.VALKEY_HOST,
+            port=Config.VALKEY_PORT,
+            db=Config.VALKEY_DB,
             decode_responses=True
         )
+
         self._initialized = True
-        logging.info("Redis manager initialized")
+        logging.info("Valkey manager initialized")
     
     def publish_command(self, platform: str, command, **kwargs):
         """Publish a command to the specified platform channel"""
         message = {'command': command, **kwargs}
-        self.redis.publish(f'{platform}:commands', json.dumps(message))
+        self.valkey.publish(f'{platform}:commands', json.dumps(message))
         
     def get_online_users(self, platform):
         """Get list of online users for the specified platform"""
-        users = self.redis.get(f'{platform}:online_users')
+        users = self.valkey.get(f'{platform}:online_users')
         if users:
             return json.loads(users)
         return []
@@ -52,9 +53,9 @@ class RedisManager:
         )
         
         for _ in range(30):
-            result = self.redis.get(message_id)
+            result = self.valkey.get(message_id)
             if result:
-                self.redis.delete(message_id)
+                self.valkey.delete(message_id)
                 return json.loads(result).get('channel_id')
             time.sleep(1)
             
@@ -76,9 +77,9 @@ class RedisManager:
         )
         
         for _ in range(30):
-            result = self.redis.get(message_id)
+            result = self.valkey.get(message_id)
             if result:
-                self.redis.delete(message_id)
+                self.valkey.delete(message_id)
                 return json.loads(result).get('result')
             time.sleep(1)
             

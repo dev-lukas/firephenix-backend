@@ -1,9 +1,9 @@
 from flask import Blueprint, jsonify
 from app.utils.database import DatabaseManager
-from app.utils.redis_manager import RedisManager
+from app.utils.valkey_manager import ValkeyManager
 from app.utils.security import limiter, handle_errors
 
-redis_manager = RedisManager()
+valkey_manager = ValkeyManager()
 
 ranking_stats_bp = Blueprint('ranking_stats', __name__)
 
@@ -66,8 +66,8 @@ def get_stats():
     db.close()
 
     online_users = (
-        len(redis_manager.get_online_users('discord')) +
-        len(redis_manager.get_online_users('teamspeak'))
+        len(valkey_manager.get_online_users('discord')) +
+        len(valkey_manager.get_online_users('teamspeak'))
     )
 
     rankings = {

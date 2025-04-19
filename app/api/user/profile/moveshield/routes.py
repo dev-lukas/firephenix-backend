@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
 from app.utils.security import limiter, login_required, handle_errors
-from app.utils.redis_manager import RedisManager
+from app.utils.valkey_manager import ValkeyManager
 
 user_profile_moveshield_bp = Blueprint('/api/user/profile/moveshield/', __name__)
 
-redis_manager = RedisManager()
+valkey_manager = ValkeyManager()
 
 @user_profile_moveshield_bp.route('/api/user/profile/moveshield', methods=['POST'])
 @login_required
@@ -48,7 +48,7 @@ def set_move_shield():
             'error': 'This account has not reached level 10'
         }), 400
     
-    if redis_manager.set_move_shield(platform, id, add=True):
+    if valkey_manager.set_move_shield(platform, id, add=True):
         db.execute_query(f"""
             UPDATE user
                 SET {platform}_moveable = 0
@@ -101,7 +101,7 @@ def remove_move_shield():
             'error': 'This account has not reached level 10'
         }), 400
     
-    if redis_manager.set_move_shield(platform, id, add=False):
+    if valkey_manager.set_move_shield(platform, id, add=False):
         db.execute_query(f"""
             UPDATE user
                 SET {platform}_moveable = 1

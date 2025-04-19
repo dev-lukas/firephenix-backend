@@ -1,10 +1,10 @@
 from flask import Blueprint, jsonify, request
 from app.utils.database import DatabaseManager
-from app.utils.redis_manager import RedisManager
+from app.utils.valkey_manager import ValkeyManager
 from app.utils.security import limiter, handle_errors
 from datetime import datetime
 
-redis_manager = RedisManager()
+valkey_manager = ValkeyManager()
 ranking_bp = Blueprint('ranking', __name__)
 
 @ranking_bp.route('/api/ranking', methods=['GET'])
@@ -20,8 +20,8 @@ def get_ranking():
     db = DatabaseManager()
     
 
-    discord_users = redis_manager.get_online_users('discord')
-    teamspeak_users = redis_manager.get_online_users('teamspeak')
+    discord_users = valkey_manager.get_online_users('discord')
+    teamspeak_users = valkey_manager.get_online_users('teamspeak')
     online_users = set(discord_users) | set(teamspeak_users)
     
     count_query = """

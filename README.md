@@ -8,7 +8,7 @@ enabling users to merge both their Discord and Teamspeak accounts.
 ## Prerequisites
 - Python 3.12.8
 - MariaDB
-- Redis
+- Valkey
 
 ## Installation 
 Install dependencies with  
@@ -27,7 +27,7 @@ The app is configured through the Config class in `app/config.py`.
 Values like the database name, discord server id, teamspeak ports and more are configured here.
 
 ## Usage
-Run your MariaDB & Redis
+Run your MariaDB & Valkey
 Run the rankingsystem with
 `bot_runner (start/stop/status)`
 Run the Website API with  

@@ -1,9 +1,9 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
-from app.utils.redis_manager import RedisManager
+from app.utils.valkey_manager import ValkeyManager
 from app.utils.security import limiter, login_required, handle_errors
 
-redis_manager = RedisManager()
+valkey_manager = ValkeyManager()
 
 user_profile_channel_bp = Blueprint('/api/user/profile/channel', __name__)
 
@@ -47,9 +47,9 @@ def create_channel():
         }), 400
     
     if platform == 'discord':
-        channel_id = redis_manager.create_owned_channel('discord', discord_id, f"{name}'s Channel")
+        channel_id = valkey_manager.create_owned_channel('discord', discord_id, f"{name}'s Channel")
     else:
-        channel_id = redis_manager.create_owned_channel('teamspeak', teamspeak_id, f"{name}'s Channel")
+        channel_id = valkey_manager.create_owned_channel('teamspeak', teamspeak_id, f"{name}'s Channel")
     if not channel_id:
         return jsonify({'error': 'Error creating channel'}), 500
 

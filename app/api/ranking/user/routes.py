@@ -1,9 +1,9 @@
 from flask import Blueprint, jsonify
 from app.utils.database import DatabaseManager
-from app.utils.redis_manager import RedisManager
+from app.utils.valkey_manager import ValkeyManager
 from app.utils.security import limiter, handle_errors
 
-redis_manager = RedisManager()
+valkey_manager = ValkeyManager()
 
 ranking_user_bp = Blueprint('ranking_user', __name__)
 

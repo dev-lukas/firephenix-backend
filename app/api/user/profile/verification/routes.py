@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
 from app.utils.security import limiter, login_required, generate_verification_code, handle_errors
-from app.utils.redis_manager import RedisManager
+from app.utils.valkey_manager import ValkeyManager
 
 user_profile_verification_bp = Blueprint('/api/user/profile/verification/', __name__)
 
-redis_manager = RedisManager()
+valkey_manager = ValkeyManager()
 
 @user_profile_verification_bp.route('/api/user/profile/verification/initiate', methods=['POST'])
 @login_required
@@ -22,7 +22,7 @@ def initiate_verification():
     if platform not in ['discord', 'teamspeak']:
         return jsonify({'error': 'Invalid platform'}), 400
     
-    online_users = redis_manager.get_online_users(platform)
+    online_users = valkey_manager.get_online_users(platform)
     if platform == 'discord':
         if int(platform_id) not in online_users:
             return jsonify({'error': 'User not connected'}), 400
@@ -56,7 +56,7 @@ def initiate_verification():
     
     db.close()
 
-    redis_manager.publish_command(platform, 'send_verification', platform_id=platform_id, code=verification_code)
+    valkey_manager.publish_command(platform, 'send_verification', platform_id=platform_id, code=verification_code)
 
     return jsonify({'message': 'Verification code sent'})
 
@@ -128,7 +128,7 @@ def verify_code():
         db.execute_query("COMMIT")
         db.close()
 
-        redis_manager.publish_command(platform, 'check_ranks', platform_id=platform_id)
+        valkey_manager.publish_command(platform, 'check_ranks', platform_id=platform_id)
         
     except Exception as e:
         db.execute_query("ROLLBACK")

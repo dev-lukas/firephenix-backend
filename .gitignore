@@ -1,3 +1,4 @@
 .env
 __pycache__
 log/
+bot_runner.pid

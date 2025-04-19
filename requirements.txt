@@ -5,6 +5,6 @@ requests>=2.28.0
 mariadb
 flask
 flask-cors
-Flask-Limiter
-redis
+Flask-Limiter[valkey]
+valkey[libvalkey]
 psutil

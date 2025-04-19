@@ -32,13 +32,13 @@ class Config:
     DB_USER="root"
     DB_NAME="firephenix"
     DB_PASSWORD=os.getenv("DB_PASSWORD")
-    # Redis
-    REDIS_HOST = 'localhost'
-    REDIS_PORT = 6379
-    REDIS_DB = 0
-    REDIS_UPDATE_INTERVAL = 2
+    # Valkey
+    VALKEY_HOST = 'localhost'
+    VALKEY_PORT = 6379
+    VALKEY_DB = 0
+    VALKEY_UPDATE_INTERVAL = 2
     # Limiter
-    LIMITER_STORAGE_URI="redis://localhost:6379"
+    LIMITER_STORAGE_URI=f"redis://{VALKEY_HOST}:{VALKEY_PORT}"
     # Lock Socket - needed for Cross-Platform Locking
     PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_runner.pid")
     # Rankingsystem

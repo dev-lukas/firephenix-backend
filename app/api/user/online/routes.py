@@ -1,9 +1,9 @@
 from flask import Blueprint, jsonify, request
 from app.utils.database import DatabaseManager
-from app.utils.redis_manager import RedisManager
+from app.utils.valkey_manager import ValkeyManager
 from app.utils.security import limiter, handle_errors
 
-redis_manager = RedisManager()
+valkey_manager = ValkeyManager()
 
 user_online_bp = Blueprint('/api/user/online', __name__)
 
@@ -15,7 +15,7 @@ def get_connected_users():
     if platform not in ['discord', 'teamspeak']:
         return jsonify({'error': 'Invalid platform'}), 400
     
-    online_users = redis_manager.get_online_users(platform)
+    online_users = valkey_manager.get_online_users(platform)
     id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
     placeholders = ','.join(['?'] * len(online_users))
     
