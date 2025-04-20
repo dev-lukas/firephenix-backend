@@ -43,9 +43,9 @@ def set_move_shield():
             'error': 'This account already has a move shield'
         }), 400
     
-    if level < 10:
+    if level < 2:
         return jsonify({
-            'error': 'This account has not reached level 10'
+            'error': 'This account has not reached level 2'
         }), 400
     
     if valkey_manager.set_move_shield(platform, id, add=True):
@@ -96,9 +96,9 @@ def remove_move_shield():
             'error': 'This account already has no move shield'
         }), 400
     
-    if level < 10:
+    if level < 2:
         return jsonify({
-            'error': 'This account has not reached level 10'
+            'error': 'This account has not reached level 2'
         }), 400
     
     if valkey_manager.set_move_shield(platform, id, add=False):

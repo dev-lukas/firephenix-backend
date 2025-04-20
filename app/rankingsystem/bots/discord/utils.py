@@ -215,3 +215,29 @@ async def create_owned_channel(bot, user_id: int, channel_name: str) -> int:
     except Exception as e:
         logging.error(f"Error creating permanent channel: {e}")
         return None
+    
+async def move_channel_apex(bot, channel_id: int) -> bool:
+    """
+    Moves a channel to the Apex category
+    """
+    try:
+        guild = bot.get_guild(Config.DISCORD_GUILD_ID)
+        if not guild:
+            logging.error("Guild not found")
+            return False
+
+        channel = guild.get_channel(channel_id)
+        if not channel:
+            logging.error(f"Channel {channel_id} not found")
+            return False
+
+        parent = guild.get_channel(Config.DISCORD_APEX_PARENT_CHANNEL)
+        if not parent:
+            logging.error(f"Parent channel {Config.DISCORD_PARENT_CHANNEL} not found")
+            return False
+
+        await channel.edit(category=parent)
+        return True
+    except Exception as e:
+        logging.error(f"Error moving channel: {e}")
+        return False

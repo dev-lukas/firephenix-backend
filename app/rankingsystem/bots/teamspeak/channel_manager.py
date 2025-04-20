@@ -1,4 +1,5 @@
 import ts3
+from app.config import Config
 from app.utils.logger import RankingLogger
 from app.utils.security import generate_verification_code
 
@@ -44,6 +45,16 @@ class ChannelManager:
                     return None
             logging.error(f"Error creating owned channel: {e}")
             return None
+        
+    def move_channel_apex(self, channel_id):
+        """Moves a channel to a new location"""
+        try:
+            with self.connection_manager.connect() as ts3conn:
+                ts3conn.exec_("channelmove", cid=channel_id, cpid=Config.TS3_APEX_PARENT_CHANNEL)
+                return True
+        except ts3.query.TS3QueryError as e:
+            logging.error(f"Error moving channel: {e}")
+            return False
     
     def send_verification(self, user_id, code):
         """Send verification code to TeamSpeak user"""

@@ -228,6 +228,21 @@ class RankingSystem:
                         ex=30
                     )
 
+            elif command == 'set_apex_channel':
+                channel_id = data.get('channel_id')
+                message_id = data.get('message_id')
+                if self.dc:
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.dc.move_channel_apex(int(channel_id)),
+                        self.dc.bot.loop
+                    ).result()
+
+                    self.valkey.set(
+                        message_id,
+                        json.dumps({'result': result}),
+                        ex=30
+                    )
+
         except Exception as e:
             logging.error(f"Error handling Discord command: {e}")
 
@@ -274,6 +289,14 @@ class RankingSystem:
                 message_id = data.get('message_id')
                 if self.ts:
                     result = self.ts.remove_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
+                    json_data = json.dumps({'result': result})
+                    self.valkey.set(message_id, json_data, ex=30)
+
+            elif command == 'set_apex_channel':
+                channel_id = data.get('channel_id')
+                message_id = data.get('message_id')
+                if self.ts:
+                    result = self.ts.move_channel_apex(channel_id)
                     json_data = json.dumps({'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
 

@@ -152,6 +152,19 @@ class DatabaseManager:
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
 
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS unlockables (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    steam_id BIGINT NOT NULL,
+                    platform ENUM('discord', 'teamspeak', 'gameserver') NOT NULL,
+                    unlockable_type INT NOT NULL,
+                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY unique_user_unlockable (steam_id, unlockable_type),
+                    INDEX idx_platform_uid (steam_id),
+                    INDEX idx_unlockable_type (unlockable_type)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
+
             self.conn.commit()
         except mariadb.Error as e:
             logging.error(f"Error creating tables: {e}")

@@ -204,12 +204,35 @@ def get_connected_users():
                 special_achievements_data = db.execute_query(special_achievements_query, tuple(special_achievements_params))
 
         best_division_achieved = 0
+        apex_division = False
+        apex_rank = False
+        discord_upgraded = False
+        teamspeak_upgraded = False
 
         if special_achievements_data:
             for achievement in special_achievements_data:
                 achievement_type = achievement[0]
                 if 101 <= achievement_type <= 106:
                     best_division_achieved = max(best_division_achieved, achievement_type - 100)
+                elif achievement_type == 200:
+                    apex_division = True
+                elif achievement_type == 300:
+                    apex_rank = True
+
+        if apex_division or	apex_rank:
+            unlockable_query = """SELECT platform, unlockable_type
+            FROM unlockables
+            WHERE steam_id = ?
+            """
+            unlockable_data = db.execute_query(unlockable_query, (steam_id,))
+            if unlockable_data:
+                for unlockable in unlockable_data:
+                    platform = unlockable[0]
+                    unlockable_type = unlockable[1]
+                    if platform == 'discord' and unlockable_type == 1:
+                        discord_upgraded = True
+                    elif platform == 'teamspeak' and unlockable_type == 1:
+                        teamspeak_upgraded = True
 
         response = jsonify({
             'id': user_data[0],
@@ -227,6 +250,10 @@ def get_connected_users():
             'weekly_time': int(user_data[12]),
             'monthly_time': int(user_data[13]),
             'season_time': int(user_data[14]),
+            'apex_division': apex_division,
+            'apex_rank': apex_rank,
+            'discord_upgraded': discord_upgraded,
+            'teamspeak_upgraded': teamspeak_upgraded,
             'time_to_next_level': int(time_to_next_level),
             'time_to_next_division': int(time_to_next_division),
             'best_division_achieved': best_division_achieved,

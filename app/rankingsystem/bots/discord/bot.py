@@ -4,7 +4,7 @@ from discord.ext import commands
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.rankingsystem.bots.discord.client_manager import ClientManager
-from app.rankingsystem.bots.discord.utils import set_ranks, send_verification, create_owned_channel, set_user_group, remove_user_group
+from app.rankingsystem.bots.discord.utils import set_ranks, send_verification, create_owned_channel, set_user_group, remove_user_group, move_channel_apex
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -79,3 +79,7 @@ class DiscordBot:
     async def remove_user_group(self, user_id: int, group_id: int) -> bool:
         """Remove a specific user group for a given user"""
         return await remove_user_group(self.bot, user_id, group_id)
+    
+    async def move_channel_apex(self, channel_id: int) -> bool:
+        """Move a channel to a new location"""
+        return await move_channel_apex(self.bot, channel_id)

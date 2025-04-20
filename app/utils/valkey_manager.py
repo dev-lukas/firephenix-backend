@@ -84,3 +84,22 @@ class ValkeyManager:
             time.sleep(1)
             
         return False
+    
+    def set_apex_channel(self, platform: str, channel_id):
+        """Send command to set a channel as Apex and wait for response"""
+        message_id = f"{platform}:apex_channel:{channel_id}:{int(time.time())}"
+        self.publish_command(
+            platform, 
+            'set_apex_channel', 
+            channel_id=channel_id,
+            message_id=message_id
+        )
+        
+        for _ in range(30):
+            result = self.valkey.get(message_id)
+            if result:
+                self.valkey.delete(message_id)
+                return json.loads(result).get('result')
+            time.sleep(1)
+            
+        return False

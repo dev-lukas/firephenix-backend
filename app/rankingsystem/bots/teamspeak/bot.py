@@ -104,6 +104,10 @@ class TeamspeakBot:
     def remove_server_group(self, client_id, group_id):
         """Remove a server group from a user"""
         return self.rank_manager.remove_server_group(client_id, group_id)
+    
+    def move_channel_apex(self, channel_id):
+        """Move a channel to a new location"""
+        return self.channel_manager.move_channel_apex(channel_id)
 
     def stop(self):
         """Gracefully stop the bot"""

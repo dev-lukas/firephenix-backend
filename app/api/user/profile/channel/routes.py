@@ -32,7 +32,6 @@ def create_channel():
     if not user_data:
         return jsonify({'error': 'This account has not yet linked his steamid with an account'}), 404
 
-    # Extract user data
     level, name, discord_id, teamspeak_id, platform_channel = user_data
     
     if platform_channel:
