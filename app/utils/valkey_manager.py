@@ -103,3 +103,23 @@ class ValkeyManager:
             time.sleep(1)
             
         return False
+    
+    def unlock_skin(self, platform: str, tier: int, player_id: str):
+        """Send command to unlock a skin and wait for response"""
+        message_id = f"{platform}:skin:{tier}:{player_id}:{int(time.time())}"
+        self.publish_command(
+            platform, 
+            'unlock_skin', 
+            tier=tier, 
+            player_id=player_id,
+            message_id=message_id
+        )
+        
+        for _ in range(30):
+            result = self.valkey.get(message_id)
+            if result:
+                self.valkey.delete(message_id)
+                return json.loads(result).get('result')
+            time.sleep(1)
+            
+        return False
