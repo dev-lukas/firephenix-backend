@@ -89,13 +89,21 @@ def get_connected_users():
             'division': None,
             'discord_channel': None,
             'teamspeak_channel': None,
+            'discord_moveable': 0,
+            'teamspeak_moveable': 0,
             'total_time': 0,
             'daily_time': 0,
             'weekly_time': 0,
             'monthly_time': 0,
             'season_time': 0,
+            'apex_division': 0,
+            'apex_rank': 0,
+            'discord_upgraded': 0,
+            'teamspeak_upgraded': 0,
             'time_to_next_level': 0,
             'time_to_next_division': 0,
+            'best_division_achieved': 0,
+            'season_one_skins_unlocked': {2: False, 3: False, 4: False, 5: False, 6: False},
             'activity_heatmap': {
                 'data': {
                     day: {
@@ -209,6 +217,8 @@ def get_connected_users():
         discord_upgraded = False
         teamspeak_upgraded = False
 
+        season_one_skins = {2: False, 3: False, 4: False, 5: False, 6: False}
+
         if special_achievements_data:
             for achievement in special_achievements_data:
                 achievement_type = achievement[0]
@@ -219,20 +229,22 @@ def get_connected_users():
                 elif achievement_type == 300:
                     apex_rank = True
 
-        if apex_division or	apex_rank:
-            unlockable_query = """SELECT platform, unlockable_type
-            FROM unlockables
-            WHERE steam_id = ?
-            """
-            unlockable_data = db.execute_query(unlockable_query, (steam_id,))
-            if unlockable_data:
-                for unlockable in unlockable_data:
-                    platform = unlockable[0]
-                    unlockable_type = unlockable[1]
-                    if platform == 'discord' and unlockable_type == 1:
-                        discord_upgraded = True
-                    elif platform == 'teamspeak' and unlockable_type == 1:
-                        teamspeak_upgraded = True
+        unlockable_query = """SELECT platform, unlockable_type
+        FROM unlockables
+        WHERE steam_id = ?
+        """
+        unlockable_data = db.execute_query(unlockable_query, (steam_id,))
+        if unlockable_data:
+            for unlockable in unlockable_data:
+                platform = unlockable[0]
+                unlockable_type = unlockable[1]
+                if platform == 'discord' and unlockable_type == 1:
+                    discord_upgraded = True
+                elif platform == 'teamspeak' and unlockable_type == 1:
+                    teamspeak_upgraded = True
+                if platform == 'gameserver':
+                    if 12 <= unlockable_type <= 16:
+                        season_one_skins[unlockable_type - 10] = True
 
         response = jsonify({
             'id': user_data[0],
@@ -257,6 +269,7 @@ def get_connected_users():
             'time_to_next_level': int(time_to_next_level),
             'time_to_next_division': int(time_to_next_division),
             'best_division_achieved': best_division_achieved,
+            'season_one_skins_unlocked': season_one_skins,
             'activity_heatmap': {
                 'data': heatmap
             },

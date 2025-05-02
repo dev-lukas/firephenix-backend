@@ -3,11 +3,11 @@ from app.utils.database import DatabaseManager
 from app.utils.security import limiter, login_required, handle_errors
 from app.utils.valkey_manager import ValkeyManager
 
-user_profile_moveshield_bp = Blueprint('/api/user/profile/skins', __name__)
+user_profile_skins_bp = Blueprint('/api/user/profile/skins', __name__)
 
 valkey_manager = ValkeyManager()
 
-@user_profile_moveshield_bp.route('/api/user/profile/skins', methods=['POST'])
+@user_profile_skins_bp.route('/api/user/profile/skins', methods=['POST'])
 @login_required
 @handle_errors
 @limiter.limit("1 per minute")
@@ -22,7 +22,7 @@ def set_skin():
     if platform not in ['garrysmod']:
         return jsonify({'error': 'Invalid platform'}), 400
     
-    if tier not in [1, 2, 3, 4, 5, 6]:
+    if tier not in [2, 3, 4, 5, 6]:
         return jsonify({'error': 'Invalid tier'}), 400
     
     db = DatabaseManager()
@@ -76,10 +76,25 @@ def set_skin():
             'error': 'This account has not reached the needed tier'
         }), 400
 
-    # Check if the skin was already gifted in the database
+    unlock_query = """
+        SELECT unlocked_at
+        FROM unlockables
+        WHERE steam_id = ?
+        AND platform = 'gameserver'
+        AND unlockable_type = ?
+    """
+
+    db.cursor.execute(unlock_query, (steam_id, tier + 10))
+    unlocked = db.cursor.fetchone()
+
+    if unlocked:
+        return jsonify({'error': 'This skin has already been unlocked'}), 400
 
     if valkey_manager.unlock_skin(platform, tier, steam_id):
-        # Update Database here
+        db.execute_query("""
+            INSERT INTO unlockables (steam_id, platform, unlockable_type)
+            VALUES (?, 'gameserver', ?)
+        """, (steam_id, tier + 10))
         pass
     else:
         return jsonify({'error': 'Error gifting skin'}), 500

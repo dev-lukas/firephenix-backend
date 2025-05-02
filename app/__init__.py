@@ -17,6 +17,7 @@ from app.api.user.profile.verification.routes import user_profile_verification_b
 from app.api.user.profile.channel.routes import user_profile_channel_bp
 from app.api.user.profile.channel.apex.routes import user_profile_channel_apex_bp
 from app.api.user.profile.moveshield.routes import user_profile_moveshield_bp
+from app.api.user.profile.skins.routes import user_profile_skins_bp
 from app.api.ranking.season.routes import ranking_season_bp
 from app.api.ranking.user.routes import ranking_user_bp
 
@@ -62,6 +63,7 @@ def create_app():
     app.register_blueprint(user_profile_moveshield_bp)
     app.register_blueprint(user_ranking_profile_achievements_bp)
     app.register_blueprint(user_profile_channel_apex_bp)
+    app.register_blueprint(user_profile_skins_bp)
 
     logging.info("Flask App started successfully. System ready.")
 
