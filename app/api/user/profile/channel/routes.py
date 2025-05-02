@@ -36,9 +36,9 @@ def create_channel():
     
     if platform_channel:
         return jsonify({'error': 'This account already has a channel on this plattform'}), 400
-    if level < 20:
+    if level < 19:
         return jsonify({
-            'error': 'This account has not reached level 20'
+            'error': 'This account has not reached level 19'
         }), 400
     if platform == 'discord' and discord_id is None or platform == 'teamspeak' and teamspeak_id is None:
         return jsonify({
