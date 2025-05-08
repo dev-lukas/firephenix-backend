@@ -5,6 +5,7 @@ from app.utils.database import DatabaseManager, DatabaseConnectionError
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.rankingsystem.bots.discord.utils import set_ranks
+from app.rankingsystem.bots.discord.aichat import handle_chat_message
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -184,3 +185,14 @@ class ClientManager(commands.Cog):
             if entry.target and entry.target.id == member_id:
                 return entry
         return None
+    
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        """Listen for chat messages in a specific channel and respond using OpenRouter."""
+        if (
+            message.channel.id == Config.DISCORD_CHAT_CHANNEL
+            and not message.author.bot
+        ):
+            response = await handle_chat_message(message)
+            if response:
+                await message.channel.send(response)
