@@ -1,5 +1,8 @@
 import ts3
+import requests
 from app.utils.logger import RankingLogger
+from app.config import Config
+from app.utils.database import DatabaseManager
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -74,10 +77,40 @@ class ClientManager:
                 self.client_uid_map[event["clid"]] = uid
                 self.client_name_map[uid] = name
                 logging.debug(f"User connected: {uid}")
+                self.check_vpn_and_kick_if_needed(client_info, event["clid"], ts3conn)
                 return uid
         except ts3.query.TS3QueryError as e:
             logging.error(f"Error handling client connect: {e}")
         return None
+
+    def check_vpn_and_kick_if_needed(self, client_info, clid, ts3conn):
+        """Check if the user's IP is VPN/Tor and kick if level is too low."""
+        try:
+            ip = client_info.get("connection_client_ip")
+            if not ip:
+                logging.warning(f"No IP found for client {clid}")
+                return
+            
+            db = DatabaseManager()
+            result = db.execute_query("SELECT level FROM user WHERE teamspeak_id = ?", (client_info["client_unique_identifier"],))
+            db.close()
+            level = result[0][0] if result else 0
+            if level < 9:
+                resp = requests.get(f"https://vpnapi.io/api/{ip}?key={Config.VPNAPI_API_KEY}", timeout=3)
+                if resp.status_code != 200:
+                    logging.warning(f"vpnapi.io error: {resp.status_code}")
+                    return
+                data = resp.json()
+                is_vpn = data.get("security", {}).get("vpn", False)
+                is_tor = data.get("security", {}).get("tor", False)
+                if is_vpn or is_tor:
+                    try:
+                        ts3conn.exec_("clientkick", clid=clid, reasonid=5, reasonmsg="VPNs sind aus Abuse Gründen erst ab Level 9 erlaubt. Bei dringendem Bedarf bitte an admin@firephenix.de wenden.")
+                        logging.info(f"Kicked user {clid} for VPN/Tor usage (level {level})")
+                    except Exception as e:
+                        logging.error(f"Failed to kick user {clid}: {e}")
+        except Exception as e:
+            logging.error(f"Error in VPN check: {e}")
     
     def handle_client_disconnect(self, event):
         """Handle client disconnection event"""

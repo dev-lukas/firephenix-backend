@@ -47,6 +47,8 @@ class Config:
     # OpenRouter
     OPENROUTER_MODEL = "google/gemini-2.0-flash-exp:free"
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    # VPNApi.io
+    VPNAPI_API_KEY = os.getenv("VPNAPI_API_KEY")
     # Rankingsystem
     LEVEL_REQUIREMENTS = {
         1: 0,
