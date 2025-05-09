@@ -36,10 +36,10 @@ async def handle_chat_message(message):
                     return data["choices"][0]["message"]["content"]
                 else:
                     logging.error(f"OpenRouter API error: {resp} {resp.status}")
-                    return "Tut mir Leid, der Phönix schläft gerade."
+                    return "Tut mir Leid, Ember hat leider ihr Mana verbraucht und schläft gerade."
     except Exception as e:
         logging.error(f"Error in handle_chat_message: {e}")
-        return "Scheint so, als wäre der Phönix gerade nicht da, versuch es doch später erneut!"
+        return "Scheint so, als wäre Ember gerade nicht da, versuch es doch später erneut!"
     
 async def fetch_user_info_string(id):
     """
