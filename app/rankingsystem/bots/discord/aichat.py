@@ -10,6 +10,7 @@ async def handle_chat_message(message):
     try:
         messages = []
         messages.append({"role": "system", "content": f"{Config.OPENROUTER_INITIAL_PROMPT}"})
+        messages.append({"role": "system", "content": f"{await fetch_user_info_string(message.author.id)}"})
         async for msg in message.channel.history(limit=15, oldest_first=True):
             role = "assistant" if msg.author.bot else "user"
             messages.append({"role": role, "content": msg.content})
@@ -68,33 +69,56 @@ async def fetch_user_info_string(id):
         """
         
         results = db.execute_query(query, (id,))
-
+        db.close()
         if results:
             user = results[0]
             
+            name = user[1]
+            total_time = user[6]
+            season_time = user[7]
+
+            if user[4] <= 20:
+                level = f"Level {user[4]}"
+            else:
+                level = f"Prestige {user[4] - 20}"
+
+            if user[5] == 1:
+                division = "Bronze"
+            elif user[5] == 2:
+                division = "Silber"
+            elif user[5] == 3:
+                division = "Gold"
+            elif user[5] == 4:
+                division = "Platin"
+            elif user[5] == 5:
+                division = "Diamant"
+            elif user[5] == 6:
+                division = "Phönix"
+
             if user[4] < 25:
-                next_level_req = Config.get_level_requirement(user[4] + 1)
-                time_to_next_level = max(0, next_level_req - user[6])
+                time_to_next_level = max(0, Config.get_level_requirement(user[4] + 1) - user[6])
             
             if user[5] < 5:
-                next_division_req = Config.get_division_requirement(user[5] + 1)
-                time_to_next_division = max(0, next_division_req - int(user[7]))
+                time_to_next_division = max(0, Config.get_division_requirement(user[5] + 1) - int(user[7]))
 
-            user_info = {
-                "id": user[0],
-                "name": user[1],
-                "discord_id": user[2],
-                "teamspeak_id": user[3],
-                "level": user[4],
-                "division": user[5],
-                "total_time": user[6],
-                "season_time": user[7]
-            }
-
-            return f"""Der Benutzer heißt {user_info['name']} hat {user_info['total_time']} Minuten gespielt, 
-            davon {user_info['season_time']} in dieser Saison. Er ist auf Level {user_info['level']} und Division {user_info['division']}. 
+            rstring = f"""Der Benutzer heißt {name} hat {total_time} Minuten gespielt, 
+            davon {season_time} in dieser Season. Er ist auf Level {level} und Division {division}. 
             """
+            if time_to_next_level:
+                rstring += f"Der Benutzer braucht noch {time_to_next_level} Minuten bis zum nächsten Level."
+            else:
+                rstring += "Der Benutzer hat das maximale Level erreicht."
 
+            if time_to_next_division:
+                rstring += f" Der Benutzer braucht noch {time_to_next_division} Minuten bis zur nächsten Division."
+            elif user[5] < 6:
+                rstring += " Der Benutzer muss um Phönix zu erreichen zu den besten 15 gehören."
+            else:
+                rstring += " Der Benutzer hat die maximale Division erreicht."
+
+            return rstring
+        else:
+            return "Benutzer noch nicht in der Datenbank. Er scheint neu."
             
     except Exception as e:
         logging.error(f"Error fetching user info: {e}")
