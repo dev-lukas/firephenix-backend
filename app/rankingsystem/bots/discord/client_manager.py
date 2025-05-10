@@ -1,6 +1,6 @@
 import asyncio
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from app.utils.database import DatabaseManager, DatabaseConnectionError
 from app.utils.logger import RankingLogger
 from app.config import Config
@@ -17,9 +17,47 @@ class ClientManager(commands.Cog):
         self.database = DatabaseManager()
         self.connected_users = set()
         self.user_name_map = {}
-        self.bg_task = self.bot.loop.create_task(self.scan_voice_channels())
-        self.bg_task = self.bot.loop.create_task(self.check_default_roles())
-        logging.info("Discord Bot started successfully.")
+        self.scan_voice_channels_task.start()
+        self.check_default_roles_task.start()
+        logging.info("Discord Bot ClientManager initialized.")
+
+    async def cog_load(self):
+        await self.bot.wait_until_ready()
+        self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID) 
+        if not self.guild:
+            logging.error("Discord guild not found after cog load. User tracking may be impaired.")
+            return
+        await self.scan_voice_channels() 
+        logging.info("ClientManager cog loaded and initial voice channel scan complete.")
+
+    async def cog_unload(self):
+        self.scan_voice_channels_task.cancel()
+        self.check_default_roles_task.cancel()
+        logging.info("Discord Bot ClientManager unloaded, tasks cancelled, and user arrays flushed.")
+
+    @tasks.loop(minutes=5)  
+    async def scan_voice_channels_task(self):
+        try:
+            await self.scan_voice_channels()
+        except Exception as e:
+            logging.error(f"Error in periodic scan_voice_channels_task: {e}")
+
+    @tasks.loop(hours=1)  
+    async def check_default_roles_task(self):
+        try:
+            await self.check_default_roles()
+        except Exception as e:
+            logging.error(f"Error in periodic check_default_roles_task: {e}")
+
+    @scan_voice_channels_task.before_loop
+    async def before_scan_voice_channels_task(self):
+        await self.bot.wait_until_ready()
+        logging.info("Starting periodic voice channel scan task.")
+
+    @check_default_roles_task.before_loop
+    async def before_check_default_roles_task(self):
+        await self.bot.wait_until_ready()
+        logging.info("Starting periodic default roles check task.")
 
     async def check_user_roles(self, user_id, check_type="both"):
         """
@@ -74,18 +112,41 @@ class ClientManager(commands.Cog):
                 await set_ranks(self.bot, user_id, division=division)
 
     async def scan_voice_channels(self):
-        """Scan all voice channels and add connected users to the set"""
+        """Scan all voice channels and add connected users to the set.
+        This method also removes users who are in the set but no longer in a voice channel."""
         await self.bot.wait_until_ready()
+        if not self.guild:
+            logging.warning("Guild not available for voice channel scan.")
+            return
 
+        current_voice_users = set()
         for voice_channel in self.guild.voice_channels:
             for member in voice_channel.members:
                 if not member.bot:  # Ignore bots
-                    self.connected_users.add(member.id)
-                    self.user_name_map[member.id] = member.display_name
+                    current_voice_users.add(member.id)
+                    if member.id not in self.user_name_map or self.user_name_map[member.id] != member.display_name:
+                        self.user_name_map[member.id] = member.display_name
+                        logging.debug(f"Updated username for {member.id}: {member.display_name}")
 
-        logging.debug(
-            f"Initial voice channel scan complete. Found {len(self.connected_users)} users."
-        )
+        users_to_add = current_voice_users - self.connected_users
+        for user_id in users_to_add:
+            self.connected_users.add(user_id)
+            logging.debug(f"User {user_id} added during voice channel scan.")
+
+        users_to_remove = self.connected_users - current_voice_users
+        for user_id in users_to_remove:
+            self.connected_users.discard(user_id)
+            self.user_name_map.pop(user_id, None)
+            logging.debug(f"User {user_id} removed during voice channel scan (no longer in voice).")
+
+        if users_to_add or users_to_remove:
+            logging.info(
+                f"Voice channel scan complete. Added: {len(users_to_add)}, Removed: {len(users_to_remove)}. Total connected: {len(self.connected_users)}"
+            )
+        else:
+            logging.debug(
+                f"Periodic voice channel scan complete. No changes. Total connected: {len(self.connected_users)}"
+            )
 
     async def check_default_roles(self):
         """Check all members for rank roles and gives user the base role if none present"""
@@ -124,6 +185,33 @@ class ClientManager(commands.Cog):
 
         except Exception as e:
             logging.error(f"Error checking default roles: {e}")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        logging.info(f'{self.bot.user} has connected/reconnected to Discord!')
+        if not self.guild:
+            self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
+        if not self.guild:
+            logging.error("Discord guild not found on_ready. User tracking may be impaired.")
+            return
+        if not self.scan_voice_channels_task.is_running():
+            self.scan_voice_channels_task.start()
+        if not self.check_default_roles_task.is_running():
+            self.check_default_roles_task.start()
+
+    @commands.Cog.listener()
+    async def on_resume(self):
+        logging.info("Bot has resumed session. Re-scanning voice channels.")
+        await self.bot.wait_until_ready() 
+        if not self.guild:
+            self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
+        if not self.guild:
+            logging.error("Discord guild not found on_resume. User tracking may be impaired.")
+            return
+        try:
+            await self.scan_voice_channels()
+        except Exception as e:
+            logging.error(f"Error during on_resume voice channel scan: {e}")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):

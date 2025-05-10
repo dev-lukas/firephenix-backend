@@ -16,33 +16,50 @@ class ClientManager:
         self.client_name_map = {}
     
     def handle_initial_clients(self, ts3conn):
-        """Process existing clients after connection"""
+        """Process existing clients after connection. This serves as a full rescan."""
         self.connected_users.clear()
         self.client_uid_map.clear()
         self.client_name_map.clear()
         
+        logging.debug("Starting initial client scan (handle_initial_clients).")
         try:
             clients = ts3conn.exec_("clientlist")
             for client in clients:
-                if client.get("client_type") != "0":
+                if client.get("client_type") != "0": 
                     continue
                 
-                client_info = ts3conn.exec_("clientinfo", clid=client["clid"])[0]
-                cldbid = client_info["client_database_id"]
-                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
-                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+                client_info_full = ts3conn.exec_("clientinfo", clid=client["clid"])[0]
+                cldbid = client_info_full.get("client_database_id")
                 
-                if self.excluded_role_id in group_ids:
+                try:
+                    groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+                    group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+                    if self.excluded_role_id in group_ids:
+                        logging.debug(f"Excluding client {client_info_full.get('client_nickname')} due to excluded role.")
+                        continue
+                except ts3.query.TS3QueryError as group_error:
+                    logging.warning(f"Could not get group info for cldbid {cldbid} (client: {client.get('client_nickname')}): {group_error}. Skipping client.")
                     continue
 
-                client_data = self.get_client_data(client["clid"], ts3conn)
-                if client_data:
-                    uid, name = client_data
-                    self.connected_users.add(uid)
-                    self.client_uid_map[client["clid"]] = uid
-                    self.client_name_map[uid] = name
+                uid = client_info_full.get("client_unique_identifier")
+                name = client_info_full.get("client_nickname")
+
+                if not uid or not name:
+                    logging.warning(f"Client with clid {client['clid']} has no UID or Name. Skipping.")
+                    continue
+
+                self.connected_users.add(uid)
+                self.client_uid_map[client["clid"]] = uid
+                self.client_name_map[uid] = name
+                logging.debug(f"Tracking initial client: {name} ({uid})")
+                
+                self.check_vpn_and_kick_if_needed(client_info_full, client["clid"], ts3conn)
+
+            logging.info(f"Initial client scan complete. Tracking {len(self.connected_users)} users.")
         except ts3.query.TS3QueryError as e:
             logging.error(f"Error handling initial clients: {e}")
+        except Exception as ex:
+            logging.error(f"Unexpected error in handle_initial_clients: {ex}")
     
     def get_client_data(self, client_id, ts3conn):
         """Retrieve client information from TeamSpeak server"""
@@ -58,29 +75,44 @@ class ClientManager:
     
     def handle_client_connect(self, event, ts3conn):
         """Handle client connection event"""
+
         if event.get("client_type") != "0":
-            return
+            logging.debug(f"Ignoring connect event for non-user client_type: {event.get('client_type')}")
+            return None
+
+        clid = event.get("clid")
+        if not clid:
+            logging.warning("Connect event missing clid.")
+            return None
 
         try:
-            client_info = ts3conn.exec_("clientinfo", clid=event["clid"])[0]
-            cldbid = client_info["client_database_id"]
+            client_info = ts3conn.exec_("clientinfo", clid=clid)[0]
+            cldbid = client_info.get("client_database_id")
+            uid = client_info.get("client_unique_identifier")
+            name = client_info.get("client_nickname")
+
+            if not cldbid or not uid or not name:
+                logging.warning(f"Could not get full info for connecting clid {clid}. UID: {uid}, Name: {name}. Skipping.")
+                return None
+
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             
             if self.excluded_role_id in group_ids:
-                return
-
-            client_data = self.get_client_data(event["clid"], ts3conn)
-            if client_data:
-                uid, name = client_data
-                self.connected_users.add(uid)
-                self.client_uid_map[event["clid"]] = uid
-                self.client_name_map[uid] = name
-                logging.debug(f"User connected: {uid}")
-                self.check_vpn_and_kick_if_needed(client_info, event["clid"], ts3conn)
-                return uid
+                logging.debug(f"Ignoring connect for excluded user: {name} ({uid})")
+                return None 
+            
+            self.connected_users.add(uid)
+            self.client_uid_map[clid] = uid
+            self.client_name_map[uid] = name
+            logging.info(f"User connected: {name} ({uid})")
+            
+            self.check_vpn_and_kick_if_needed(client_info, clid, ts3conn)
+            return uid
         except ts3.query.TS3QueryError as e:
-            logging.error(f"Error handling client connect: {e}")
+            logging.warning(f"Error handling client connect for clid {clid} (user may have disconnected): {e}")
+        except Exception as ex:
+            logging.error(f"Unexpected error in handle_client_connect for clid {clid}: {ex}")
         return None
 
     def check_vpn_and_kick_if_needed(self, client_info, clid, ts3conn):
@@ -88,7 +120,7 @@ class ClientManager:
         try:
             ip = client_info.get("connection_client_ip")
             if not ip:
-                logging.warning(f"No IP found for client {clid}")
+                logging.warning(f"No IP found for client {clid} ({client_info.get('client_nickname')}) during VPN check.")
                 return
             
             db = DatabaseManager()
@@ -96,7 +128,7 @@ class ClientManager:
             db.close()
             level = result[0][0] if result else 0
             if level < 9:
-                resp = requests.get(f"https://vpnapi.io/api/{ip}?key={Config.VPNAPI_API_KEY}", timeout=3)
+                resp = requests.get(f"https://vpnapi.io/api/{ip}?key={Config.VPNAPI_API_KEY}", timeout=5)
                 if resp.status_code != 200:
                     logging.warning(f"vpnapi.io error: {resp.status_code}")
                     return
@@ -114,10 +146,19 @@ class ClientManager:
     
     def handle_client_disconnect(self, event):
         """Handle client disconnection event"""
-        uid = self.client_uid_map.pop(event["clid"], None)
-        if uid in self.connected_users:
-            self.connected_users.remove(uid)
-            self.client_name_map.pop(uid, None)
+        clid = event.get("clid")
+        if not clid:
+            logging.warning("Disconnect event missing clid.")
+            return None
+            
+        uid = self.client_uid_map.pop(clid, None)
+        if uid:
+            if uid in self.connected_users:
+                self.connected_users.remove(uid)
+            name = self.client_name_map.pop(uid, "Unknown") 
+            logging.info(f"User disconnected: {name} ({uid}). Reason ID: {event.get('reasonid', 'N/A')}")
+        else:
+            logging.debug(f"Received disconnect for untracked clid: {clid}")
         return uid
     
     def get_online_users(self):

@@ -41,6 +41,9 @@ class TeamspeakBot:
                 self._run_connection_loop()
             except Exception:
                 logging.error(f"Bot could not connect to TeamSpeak server. Retrying in {self.connection_manager.reconnect_delay} seconds.")
+                self.client_manager.connected_users.clear()
+                self.client_manager.client_uid_map.clear()
+                self.client_manager.client_name_map.clear()
                 time.sleep(self.connection_manager.reconnect_delay)
 
     def _run_connection_loop(self):
