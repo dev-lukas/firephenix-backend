@@ -35,14 +35,33 @@ class RankingSystem:
 
     def main_loop(self):
         """Main loop for the ranksystem"""
-        
+        last_users = {platform: [] for platform in self.platforms}
         while self.running:
             now = datetime.now()
             next_full_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
             time_until_full_run = (next_full_run - now).total_seconds()
-            
             valkey_update_count = max(1, int(time_until_full_run / Config.VALKEY_UPDATE_INTERVAL))
             
+            resets = self.database.get_last_resets()
+            last_daily, last_weekly, last_monthly = resets if resets else (None, None, None)
+            today = now.date()
+            weekday = now.weekday()
+            first_of_month = now.day == 1
+
+            
+            if not last_daily or (last_daily.date() != today):
+                self.database.reset_time('daily')
+                logging.info(f"Performed daily time reset at {now}")
+
+            if weekday == 0 and (not last_weekly or last_weekly.date() != today):
+                self.database.reset_time('weekly')
+                logging.info(f"Performed weekly time reset at {now}")
+
+            if first_of_month and (not last_monthly or last_monthly.month != now.month or last_monthly.year != now.year):
+                self.database.reset_time('monthly')
+                logging.info(f"Performed monthly time reset at {now}")
+
+
             for _ in range(valkey_update_count):
                 if not self.running:
                     exit()
@@ -53,17 +72,13 @@ class RankingSystem:
                     except valkey.ConnectionError as e:
                         logging.error(f"Valkey connection error: {e}")
                         break
-                
                 time_left = (next_full_run - datetime.now()).total_seconds()
                 if time_left < Config.VALKEY_UPDATE_INTERVAL:
                     break
                 time.sleep(Config.VALKEY_UPDATE_INTERVAL)
-            
             time_left = (next_full_run - datetime.now()).total_seconds()
             if time_left > 0:
                 time.sleep(time_left)
-            
-            last_users = {platform: [] for platform in self.platforms}
             
             for platform in self.platforms:
                 try:    
@@ -305,4 +320,3 @@ class RankingSystem:
 
 
 
-    

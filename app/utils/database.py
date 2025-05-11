@@ -165,6 +165,19 @@ class DatabaseManager:
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
 
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS reset_log (
+                    id INT PRIMARY KEY DEFAULT 1,
+                    last_daily_reset DATETIME,
+                    last_weekly_reset DATETIME,
+                    last_monthly_reset DATETIME
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
+            self.cursor.execute("""
+                INSERT IGNORE INTO reset_log (id, last_daily_reset, last_weekly_reset, last_monthly_reset)
+                VALUES (1, NULL, NULL, NULL)
+            """)
+
             self.conn.commit()
         except mariadb.Error as e:
             logging.error(f"Error creating tables: {e}")
@@ -477,6 +490,41 @@ class DatabaseManager:
         """, (str(platform_uid), platform, today, current_streak, longest_streak, today))
         
         self.conn.commit()
+
+    @ensure_connection
+    def reset_time(self, period: str):
+        """
+        Reset time counters for all users for the given period (daily, weekly, monthly)
+        and update the reset_log table.
+        """
+        now = datetime.now()
+        if period == 'daily':
+            self.cursor.execute("""
+                UPDATE time SET daily_time = 0
+            """)
+            self.cursor.execute("""
+                UPDATE reset_log SET last_daily_reset = ? WHERE id = 1
+            """, (now,))
+        elif period == 'weekly':
+            self.cursor.execute("""
+                UPDATE time SET weekly_time = 0
+            """)
+            self.cursor.execute("""
+                UPDATE reset_log SET last_weekly_reset = ? WHERE id = 1
+            """, (now,))
+        elif period == 'monthly':
+            self.cursor.execute("""
+                UPDATE time SET monthly_time = 0
+            """)
+            self.cursor.execute("""
+                UPDATE reset_log SET last_monthly_reset = ? WHERE id = 1
+            """, (now,))
+        self.conn.commit()
+
+    @ensure_connection
+    def get_last_resets(self):
+        self.cursor.execute("SELECT last_daily_reset, last_weekly_reset, last_monthly_reset FROM reset_log WHERE id = 1")
+        return self.cursor.fetchone()
 
     def close(self) -> None:
         """Close database connection"""
