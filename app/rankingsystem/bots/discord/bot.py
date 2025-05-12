@@ -1,4 +1,5 @@
 import time
+import asyncio
 import discord
 from discord.ext import commands
 from app.utils.logger import RankingLogger
@@ -36,7 +37,10 @@ class DiscordBot:
         @self.bot.event
         async def on_ready():
             self.time_tracker = ClientManager(self.bot)
-            await self.bot.add_cog(self.time_tracker)
+            try:
+                await self.bot.add_cog(self.time_tracker)
+            except discord.errors.ClientException:
+                logging.error("ClientException: Cog already loaded")
 
     def run(self):
         while True:
@@ -44,9 +48,16 @@ class DiscordBot:
                 self.bot.run(self.token)
             except discord.errors.ConnectionClosed:
                 logging.error("Connection to Discord lost. Reconnecting in 5 seconds.")
+                time.sleep(5)
             except discord.errors.GatewayNotFound:
-                logging.error("Gateway not found. Reconnecting in 5 seconds.")
+                logging.error("Gateway not found. Reconnecting in 30 seconds.")
                 time.sleep(30)
+            except asyncio.TimeoutError:
+                logging.error("Discord connection timed out. Reconnecting in 10 seconds.")
+                time.sleep(10)
+            except asyncio.CancelledError:
+                logging.error("Discord connection cancelled. Reconnecting in 10 seconds.")
+                time.sleep(10)
             except Exception as e:
                 logging.error(f"Error running the bot: {e}")
                 time.sleep(60)
