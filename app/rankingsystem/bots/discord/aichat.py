@@ -16,7 +16,8 @@ async def handle_chat_message(message):
             messages.append({"role": role, "content": msg.content})
 
         payload = {
-            "model": f"{Config.OPENROUTER_MODEL}",  
+            "model": f"{Config.OPENROUTER_MODEL}",
+            "models": Config.OPENROUTER_ALTERNATE_MODELS,  
             "messages": messages,
         }
 
