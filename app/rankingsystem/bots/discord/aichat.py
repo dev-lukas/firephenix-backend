@@ -42,6 +42,21 @@ async def handle_chat_message(message):
         logging.error(f"Error in handle_chat_message: {e}")
         return "Scheint so, als wäre Ember gerade nicht da, versuch es doch später erneut!"
     
+def format_minutes(minutes):
+    try:
+        minutes = int(minutes)
+        hours = minutes // 60
+        mins = minutes % 60
+        if hours > 0:
+            if mins > 0:
+                return f"{hours} Stunden und {mins} Minuten"
+            else:
+                return f"{hours} Stunden"
+        else:
+            return f"{mins} Minuten"
+    except Exception:
+        return f"{minutes} Minuten"
+
 async def fetch_user_info_string(id):
     """
     Fetch user info string for the given discord id.
@@ -98,20 +113,23 @@ async def fetch_user_info_string(id):
 
             if user[4] < 25:
                 time_to_next_level = max(0, Config.get_level_requirement(user[4] + 1) - user[6])
-            
+            else:
+                time_to_next_level = None
             if user[5] < 5:
                 time_to_next_division = max(0, Config.get_division_requirement(user[5] + 1) - int(user[7]))
+            else:
+                time_to_next_division = None
 
-            rstring = f"""Der Benutzer heißt {name} hat {total_time} Minuten gespielt, 
-            davon {season_time} in dieser Season. Er ist auf Level {level} und Division {division}. 
+            rstring = f"""Der Benutzer heißt {name} hat {format_minutes(total_time)} gespielt, \
+            davon {format_minutes(season_time)} in dieser Season. Er ist auf Level {level} und Division {division}. \
             """
-            if time_to_next_level:
-                rstring += f"Der Benutzer braucht noch {time_to_next_level} Minuten bis zum nächsten Level."
+            if time_to_next_level is not None and time_to_next_level > 0:
+                rstring += f"Der Benutzer braucht noch {format_minutes(time_to_next_level)} bis zum nächsten Level."
             else:
                 rstring += "Der Benutzer hat das maximale Level erreicht."
 
-            if time_to_next_division:
-                rstring += f" Der Benutzer braucht noch {time_to_next_division} Minuten bis zur nächsten Division."
+            if time_to_next_division is not None and time_to_next_division > 0:
+                rstring += f" Der Benutzer braucht noch {format_minutes(time_to_next_division)} bis zur nächsten Division."
             elif user[5] < 6:
                 rstring += " Der Benutzer muss um Phönix zu erreichen zu den besten 15 gehören."
             else:
@@ -125,4 +143,3 @@ async def fetch_user_info_string(id):
         logging.error(f"Error fetching user info: {e}")
         return "Fehler beim Abrufen der Benutzerinformationen."
 
-    

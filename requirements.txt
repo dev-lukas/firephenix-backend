@@ -8,3 +8,4 @@ flask-cors
 Flask-Limiter[valkey]
 valkey[libvalkey]
 psutil
+gunicorn
