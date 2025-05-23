@@ -73,7 +73,10 @@ def remove_pid_file():
 
 def start_bot():
     """Start the bot if it's not already running"""
-    if is_running():
+    # Check if running under systemd (environment variable set by systemd)
+    is_systemd = os.environ.get('INVOCATION_ID') is not None
+    
+    if not is_systemd and is_running():
         logging.info("Bot is already running")
         return False
     
@@ -112,24 +115,35 @@ def start_bot():
             logging.error(f"Error starting bot: {e}")
             return False
     else:
-        try:
-            child_pid = os.fork()
-            if child_pid == 0:
-                os.setsid()
+        # For systemd, run in foreground
+        if is_systemd:
+            try:
                 runner = BotRunner()
                 runner.run()
-                sys.exit(0)
-            else:
-                time.sleep(2)
-                if is_running():
-                    logging.info("Bot started successfully")
-                    return True
+                return True
+            except Exception as e:
+                logging.error(f"Error running bot: {e}")
+                return False
+        else:
+            # For manual start, fork as before
+            try:
+                child_pid = os.fork()
+                if child_pid == 0:
+                    os.setsid()
+                    runner = BotRunner()
+                    runner.run()
+                    sys.exit(0)
                 else:
-                    logging.error("Failed to start bot")
-                    return False
-        except Exception as e:
-            logging.error(f"Error starting bot: {e}")
-            return False
+                    time.sleep(2)
+                    if is_running():
+                        logging.info("Bot started successfully")
+                        return True
+                    else:
+                        logging.error("Failed to start bot")
+                        return False
+            except Exception as e:
+                logging.error(f"Error starting bot: {e}")
+                return False
 
 def stop_bot():
     """Stop the bot if it's running"""
