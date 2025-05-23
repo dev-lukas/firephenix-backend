@@ -27,6 +27,12 @@ def import_bak_user_data():
             last_login = datetime.datetime.fromtimestamp(last)
             first_login = datetime.datetime.fromtimestamp(first)
             logging.info(f"Importing bak_user data for {name} ({uuid})")
+            
+            # Filter out bots
+            if name in ['FireBot', 'FireBot1', 'Pathfinder', 'Rechte Hand Spandaus']:
+                logging.info(f"Skipping bot user: {name}")
+                continue
+
             # Create user entry
             cursor.execute("""
                 INSERT INTO user (teamspeak_id, name, created_at)
