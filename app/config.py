@@ -32,7 +32,7 @@ class Config:
     # Database
     DB_HOST="127.0.0.1"
     DB_PORT="3306"
-    DB_USER="root"
+    DB_USER=os.getenv("DB_USER")
     DB_NAME="firephenix"
     DB_PASSWORD=os.getenv("DB_PASSWORD")
     # Valkey
