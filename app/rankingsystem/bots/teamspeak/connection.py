@@ -42,9 +42,7 @@ class ConnectionManager:
             if "banned" in str(error).lower():
                 logging.warning("Bot is banned, waiting longer before reconnect")
                 time.sleep(self.BANNED_WAIT_TIME)
-                return
-
-        time.sleep(self.reconnect_delay)
+                return        time.sleep(self.reconnect_delay)
         self.reconnect_delay = min(self.MAX_RECONNECT_DELAY, 
                                self.reconnect_delay * 2)
     
@@ -55,7 +53,25 @@ class ConnectionManager:
             return event[0] if event else None
         except ts3.query.TS3TimeoutError:
             return None
+        except Exception as e:
+            logging.warning(f"Error waiting for event: {e}")
+            return None
         
     def send_keepalive(self, ts3conn):
         """Send keepalive to prevent timeout"""
         ts3conn.send_keepalive()
+    
+    def __enter__(self):
+        """Context manager entry"""
+        self.connection = self.connect()
+        return self.connection
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        if hasattr(self, 'connection') and self.connection:
+            try:
+                self.connection.close()
+            except Exception as e:
+                logging.warning(f"Error closing TS3 connection: {e}")
+            finally:
+                self.connection = None

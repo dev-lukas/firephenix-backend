@@ -174,3 +174,92 @@ class ClientManager:
         except ts3.query.TS3QueryError:
             logging.error(f"Error checking if client {cldbid} is excluded")
             return False
+
+    def validate_connected_users(self, ts3conn):
+        """Validate that all tracked users are actually still connected and remove stale entries"""
+        try:
+            # Get current clients from server
+            current_clients = ts3conn.exec_("clientlist")
+            current_uids = set()
+            current_clid_to_uid = {}
+            
+            for client in current_clients:
+                if client.get("client_type") != "0":  # Skip non-user clients
+                    continue
+                    
+                try:
+                    client_info = ts3conn.exec_("clientinfo", clid=client["clid"])[0]
+                    uid = client_info.get("client_unique_identifier")
+                    cldbid = client_info.get("client_database_id")
+                    
+                    if not uid or not cldbid:
+                        continue
+                        
+                    # Check if user should be excluded
+                    groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+                    group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+                    if self.excluded_role_id in group_ids:
+                        continue
+                        
+                    current_uids.add(uid)
+                    current_clid_to_uid[client["clid"]] = uid
+                    
+                except ts3.query.TS3QueryError as e:
+                    logging.warning(f"Error getting info for client {client.get('clid')}: {e}")
+                    continue
+            
+            # Find users in our tracking that are no longer connected
+            stale_users = self.connected_users - current_uids
+            if stale_users:
+                logging.info(f"Found {len(stale_users)} stale users, removing them")
+                for uid in stale_users:
+                    self.connected_users.discard(uid)
+                    name = self.client_name_map.pop(uid, "Unknown")
+                    logging.info(f"Removed stale user: {name} ({uid})")
+            
+            # Find users connected but not in our tracking
+            missing_users = current_uids - self.connected_users
+            if missing_users:
+                logging.info(f"Found {len(missing_users)} missing users, adding them")
+                for uid in missing_users:
+                    self.connected_users.add(uid)
+                    # Find the name for this UID
+                    for clid, tracked_uid in current_clid_to_uid.items():
+                        if tracked_uid == uid:
+                            try:
+                                client_info = ts3conn.exec_("clientinfo", clid=clid)[0]
+                                name = client_info.get("client_nickname", "Unknown")
+                                self.client_name_map[uid] = name
+                                self.client_uid_map[clid] = uid
+                                logging.info(f"Added missing user: {name} ({uid})")
+                                break
+                            except ts3.query.TS3QueryError:
+                                continue
+            
+            # Update client_uid_map to reflect current state
+            self.client_uid_map = current_clid_to_uid.copy()
+            
+            logging.debug(f"Validation complete. Tracking {len(self.connected_users)} users.")
+            
+        except ts3.query.TS3QueryError as e:
+            logging.error(f"Error during user validation: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error during user validation: {e}")
+
+    def cleanup_stale_mappings(self):
+        """Clean up any inconsistencies in the mapping dictionaries"""
+        # Remove UIDs from name_map that aren't in connected_users
+        stale_names = set(self.client_name_map.keys()) - self.connected_users
+        for uid in stale_names:
+            self.client_name_map.pop(uid, None)
+            logging.debug(f"Removed stale name mapping for UID: {uid}")
+        
+        # Remove CLIDs that map to UIDs not in connected_users
+        stale_clids = []
+        for clid, uid in self.client_uid_map.items():
+            if uid not in self.connected_users:
+                stale_clids.append(clid)
+        
+        for clid in stale_clids:
+            self.client_uid_map.pop(clid, None)
+            logging.debug(f"Removed stale CLID mapping: {clid}")

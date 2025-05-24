@@ -24,7 +24,12 @@ class RankManager:
             except DatabaseConnectionError:
                 logging.error("Database connection error in check_user_roles. Skipping.")
                 return
-                
+            
+            if rank is None:
+                rank = 1
+            if division is None:
+                division = 1
+
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             

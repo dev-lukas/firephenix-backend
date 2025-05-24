@@ -1,4 +1,5 @@
 import time
+import ts3
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
 from app.config import Config
@@ -15,6 +16,7 @@ class TeamspeakBot:
     user connections, ranks, and time tracking.
     """
     _instance = None
+    VALIDATION_INTERVAL = 300  # Validate every 5 minutes
 
     def __new__(cls):
         if cls._instance is None:
@@ -27,6 +29,7 @@ class TeamspeakBot:
 
         self.initialized = True
         self.running = False
+        self.last_validation = 0
         self.database = DatabaseManager()
         self.connection_manager = ConnectionManager(Config)
         self.client_manager = ClientManager(Config)
@@ -61,23 +64,52 @@ class TeamspeakBot:
                     logging.error(f"Error checking roles for {uid}: {e}")
             
             while self.running:
-                self.connection_manager.send_keepalive(ts3conn)
-                
-                event = self.connection_manager.wait_for_event(ts3conn)
-                if event:
-                    self._handle_event(event, ts3conn)
+                try:
+                    self.connection_manager.send_keepalive(ts3conn)
+                    
+                    # Periodic validation to ensure our user tracking is accurate
+                    current_time = time.time()
+                    if current_time - self.last_validation > self.VALIDATION_INTERVAL:
+                        logging.debug("Performing periodic user validation")
+                        self.client_manager.validate_connected_users(ts3conn)
+                        self.last_validation = current_time
+                    
+                    event = self.connection_manager.wait_for_event(ts3conn)
+                    if event:
+                        self._handle_event(event, ts3conn)
+                        
+                except ts3.query.TS3QueryError as e:
+                    logging.error(f"TS3 Query error in main loop: {e}")
+                    break  # Exit the loop to trigger reconnection
+                except Exception as e:
+                    logging.error(f"Unexpected error in main loop: {e}")
+                    break  # Exit the loop to trigger reconnection
 
     def _handle_event(self, event, ts3conn):
         """Process TeamSpeak server events"""
         try:
-            if event["reasonid"] == "0":
+            reasonid = event.get("reasonid")
+            
+            # Handle connection events
+            if reasonid == "0":  # Client connected
                 uid = self.client_manager.handle_client_connect(event, ts3conn)
                 if uid:
                     self.rank_manager.check_user_roles(uid, ts3conn)
-            elif event["reasonid"] == "8":
-                self.client_manager.handle_client_disconnect(event)
+            
+            # Handle all disconnect events
+            elif reasonid in ["8", "3", "5", "6", "10", "11"]:
+                # 8 = quit, 3 = connection lost, 5 = kicked, 6 = banned, 10 = server stopped, 11 = server left
+                uid = self.client_manager.handle_client_disconnect(event)
+                if uid:
+                    logging.debug(f"User disconnected with reason {reasonid}: {uid}")
+            
+            # Log unhandled events for debugging
+            else:
+                logging.debug(f"Unhandled event with reasonid {reasonid}: {event}")
+                
         except Exception as e:
             logging.error(f"Error handling event: {e}")
+            logging.debug(f"Event data: {event}")
 
     def get_online_users(self):
         """Return list of currently connected users"""
@@ -111,6 +143,22 @@ class TeamspeakBot:
     def move_channel_apex(self, channel_id):
         """Move a channel to a new location"""
         return self.channel_manager.move_channel_apex(channel_id)
+
+    def force_user_validation(self):
+        """Manually trigger user validation - useful for testing or when inconsistencies are detected"""
+        try:
+            with self.connection_manager.connect() as ts3conn:
+                if ts3conn:
+                    logging.info("Forcing user validation")
+                    self.client_manager.validate_connected_users(ts3conn)
+                    self.last_validation = time.time()
+                    return True
+                else:
+                    logging.error("Could not connect to TeamSpeak server for validation")
+                    return False
+        except Exception as e:
+            logging.error(f"Error during forced validation: {e}")
+            return False
 
     def stop(self):
         """Gracefully stop the bot"""
