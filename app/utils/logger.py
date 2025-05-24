@@ -11,7 +11,7 @@ class RankingLogger:
         if not self.logger.handlers:
             self.formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-            self.file_handler = logging.FileHandler('log/rankingsystem.log')
+            self.file_handler = logging.FileHandler('/var/log/firephenix/rankingsystem.log')
             self.file_handler.setFormatter(self.formatter)
             self.logger.addHandler(self.file_handler)
 
