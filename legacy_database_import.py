@@ -25,7 +25,11 @@ def import_bak_user_data():
         for uuid, name, count, last, first in bak_users:
 
             last_login = datetime.datetime.fromtimestamp(last)
-            first_login = datetime.datetime.fromtimestamp(first)
+            # If first is 0, use None (NULL in SQL), else convert as usual
+            if first == 0:
+                first_login = '2017-01-01 00:00:00'  # Use a default date for users with no first login
+            else:
+                first_login = datetime.datetime.fromtimestamp(first)
             logging.info(f"Importing bak_user data for {name} ({uuid})")
             
             # Filter out bots
