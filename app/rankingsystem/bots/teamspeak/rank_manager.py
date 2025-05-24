@@ -33,6 +33,8 @@ class RankManager:
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             
+            logging.debug(f"User {uid} has groups: {group_ids}")
+
             correct_rank = False
             rank_roles_count = 0
             correct_division = False
