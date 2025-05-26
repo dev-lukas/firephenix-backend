@@ -45,7 +45,8 @@ class ChannelManager:
                     ("b_channel_modify_codec_latency_factor", 1), 
                     ("b_channel_modify_needed_talk_power", 1), 
                     ("b_channel_modify_maxclients", 1),
-                    ("b_channel_modify_make_temporary", 0),
+                    ("b_channel_modify_make_temporary", 0),      
+                    ("b_channel_modify_maxfamilyclients", 0),
                 ]
                 
                 for perm_name, perm_value in permissions:
@@ -61,7 +62,8 @@ class ChannelManager:
                     ("i_channel_needed_modify_power", 0), 
                     ("i_channel_needed_delete_power", 0),   
                     ("i_channel_modify_power", 76),
-                    ("b_channel_modify_make_temporary", 0),        
+                    ("b_channel_modify_make_temporary", 0),
+                    ("b_channel_modify_maxfamilyclients", 0),       
                 ]
                 
                 for perm_name, perm_value in client_permissions:
