@@ -80,6 +80,12 @@ class ClientManager(commands.Cog):
                 "Database connection error on check_user_roles - aborting checking user roles"
             )
             return None
+        
+        if rank is None:
+                rank = 1
+                
+        if division is None:
+            division = 1
 
         if check_type in ["rank", "both"]:
             correct_rank = False
