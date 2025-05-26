@@ -25,7 +25,6 @@ class ChannelManager:
                     channel_codec_quality=10
                 )
                 cid = channel[0]["cid"]
-                
                 db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=user_id)[0]
                 cldbid = db_info["cldbid"]
 
@@ -33,6 +32,47 @@ class ChannelManager:
                             cgid=self.config.TS3_OWNER_GROUP_ID,
                             cldbid=cldbid,
                             cid=cid)
+                
+                permissions = [
+                    ("i_channel_needed_modify_power", 75),  
+                    ("i_channel_needed_delete_power", 75),  
+                    ("b_channel_modify_make_default", 1),   
+                    ("b_channel_modify_name", 1),           
+                    ("b_channel_modify_topic", 1),          
+                    ("b_channel_modify_description", 1),    
+                    ("b_channel_modify_password", 1),       
+                    ("b_channel_modify_codec", 1),          
+                    ("b_channel_modify_codec_quality", 1),  
+                    ("b_channel_modify_codec_latency_factor", 1), 
+                    ("b_channel_modify_needed_talk_power", 1), 
+                    ("i_channel_modify_power", 75),        
+                ]
+                
+                for perm_name, perm_value in permissions:
+                    try:
+                        ts3conn.exec_("channeladdperm", 
+                                    cid=cid,
+                                    permsid=perm_name,
+                                    permvalue=perm_value)
+                    except ts3.query.TS3QueryError as perm_error:
+                        logging.debug(f"Could not set channel permission {perm_name}: {perm_error}")
+                
+                client_permissions = [
+                    ("i_channel_needed_modify_power", 0), 
+                    ("i_channel_needed_delete_power", 0),   
+                    ("i_channel_modify_power", 100),        
+                ]
+                
+                for perm_name, perm_value in client_permissions:
+                    try:
+                        ts3conn.exec_("channelclientaddperm",
+                                    cid=cid,
+                                    cldbid=cldbid,
+                                    permsid=perm_name,
+                                    permvalue=perm_value)
+                    except ts3.query.TS3QueryError as perm_error:
+                        logging.debug(f"Could not set client permission {perm_name}: {perm_error}")
+                
                 return cid
         except ts3.query.TS3QueryError as e:
             if "channel name is already in use" in str(e).lower():
