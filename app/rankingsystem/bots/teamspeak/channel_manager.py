@@ -36,7 +36,7 @@ class ChannelManager:
                 permissions = [
                     ("i_channel_needed_modify_power", 75),  
                     ("i_channel_needed_delete_power", 75),  
-                    ("b_channel_modify_make_default", 0),   
+                    ("b_channel_modify_make_default", 1),   
                     ("b_channel_modify_name", 1),           
                     ("b_channel_modify_topic", 1),          
                     ("b_channel_modify_description", 1),    
@@ -47,7 +47,6 @@ class ChannelManager:
                     ("b_channel_modify_needed_talk_power", 1), 
                     ("b_channel_modify_make_temporary", 0),
                     ("i_channel_modify_power", 75),
-                            
                 ]
                 
                 for perm_name, perm_value in permissions:
