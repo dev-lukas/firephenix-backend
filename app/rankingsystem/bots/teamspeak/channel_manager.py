@@ -35,8 +35,7 @@ class ChannelManager:
                 
                 permissions = [
                     ("i_channel_needed_modify_power", 75),  
-                    ("i_channel_needed_delete_power", 75),  
-                    ("b_channel_modify_make_default", 0),   
+                    ("i_channel_needed_delete_power", 75),    
                     ("b_channel_modify_name", 1),           
                     ("b_channel_modify_topic", 1),          
                     ("b_channel_modify_description", 1),    
@@ -45,13 +44,8 @@ class ChannelManager:
                     ("b_channel_modify_codec_quality", 1),  
                     ("b_channel_modify_codec_latency_factor", 1), 
                     ("b_channel_modify_needed_talk_power", 1), 
+                    ("b_channel_modify_maxclients", 1),
                     ("b_channel_modify_make_temporary", 0),
-                    ("b_channel_modify_maxclients", 1),     
-                    ("b_channel_modify_maxfamilyclients", 0),
-                    ("b_channel_modify_maxfamilyclients_inherited", 0),
-                    ("b_channel_modify_maxfamilyclients_inherited_default", 0),
-                    ("b_channel_modify_maxfamilyclients_inherited_default_value", 0),
-                    ("b_channel_modify_maxfamilyclients_inherited_default_value_set", 0)
                 ]
                 
                 for perm_name, perm_value in permissions:
@@ -66,7 +60,8 @@ class ChannelManager:
                 client_permissions = [
                     ("i_channel_needed_modify_power", 0), 
                     ("i_channel_needed_delete_power", 0),   
-                    ("i_channel_modify_power", 100),        
+                    ("i_channel_modify_power", 76),
+                    ("b_channel_modify_make_temporary", 0),        
                 ]
                 
                 for perm_name, perm_value in client_permissions:
