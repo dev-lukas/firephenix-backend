@@ -46,7 +46,7 @@ class Config:
     PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_runner.pid")
     # OpenRouter
     OPENROUTER_MODEL = "google/gemini-2.0-flash-exp:free"
-    OPENROUTER_ALTERNATE_MODELS = ['meta-llama/llama-3.3-8b-instruct:free', 'meta-llama/llama-3.2-8b-instruct:free'] 
+    OPENROUTER_ALTERNATE_MODELS = ['meta-llama/llama-3.3-8b-instruct:free', 'meta-llama/llama-3.2-3b-instruct:free'] 
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     # VPNApi.io
     VPNAPI_API_KEY = os.getenv("VPNAPI_API_KEY")
