@@ -19,6 +19,8 @@ async def handle_chat_message(message):
             "model": f"{Config.OPENROUTER_MODEL}",
             "models": Config.OPENROUTER_ALTERNATE_MODELS,  
             "messages": messages,
+            "HTTP-Referer": f"{Config.SITE_URL}",  
+            "X-Title": "Ember AI Chat"
         }
 
         headers = {
