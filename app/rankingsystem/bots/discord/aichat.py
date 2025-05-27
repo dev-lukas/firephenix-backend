@@ -1,7 +1,9 @@
 import aiohttp
-import logging
 from app.config import Config
 from app.utils.database import DatabaseManager
+from app.utils.logger import RankingLogger
+
+logging = RankingLogger(__name__).get_logger()
 
 async def handle_chat_message(message):
     """
