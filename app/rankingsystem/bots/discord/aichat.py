@@ -11,7 +11,7 @@ async def handle_chat_message(message):
         messages = []
         messages.append({"role": "system", "content": f"{Config.OPENROUTER_INITIAL_PROMPT}"})
         messages.append({"role": "system", "content": f"{await fetch_user_info_string(message.author.id)}"})
-        async for msg in message.channel.history(limit=15):
+        async for msg in message.channel.history(limit=15, oldest_first=True):
             role = "assistant" if msg.author.bot else "user"
             messages.append({"role": role, "content": msg.content})
 
