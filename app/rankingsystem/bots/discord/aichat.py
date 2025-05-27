@@ -26,6 +26,8 @@ async def handle_chat_message(message):
             "Content-Type": "application/json",
         }
 
+        logging.debug(f"Sending payload to OpenRouter: {payload}")
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -34,6 +36,9 @@ async def handle_chat_message(message):
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
+
+                    logging.debug(f"Received response from OpenRouter: {data}")
+
                     return data["choices"][0]["message"]["content"]
                 else:
                     logging.error(f"OpenRouter API error: {resp} {resp.status}")
