@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 from app.config import Config
 from app.utils.database import DatabaseManager
@@ -13,9 +14,18 @@ async def handle_chat_message(message):
         messages = []
         messages.append({"role": "system", "content": f"{Config.OPENROUTER_INITIAL_PROMPT}"})
         messages.append({"role": "system", "content": f"{await fetch_user_info_string(message.author.id)}"})
+
+        catched_trigger_message = False
+        await asyncio.sleep(0.2)
+        
         async for msg in message.channel.history(limit=15, oldest_first=True):
-            role = "assistant" if msg.author.bot else "user"
+            role = "assistant" if msg.author.bot else f"user {msg.author.id}"
             messages.append({"role": role, "content": msg.content})
+            if msg.content == message.content:
+                catched_trigger_message = True
+
+        if not catched_trigger_message:
+            messages.append({"role": f"user {message.author.id}", "content": message.content})
 
         payload = {
             "model": f"{Config.OPENROUTER_MODEL}",
