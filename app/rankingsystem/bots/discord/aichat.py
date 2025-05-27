@@ -19,13 +19,13 @@ async def handle_chat_message(message):
             "model": f"{Config.OPENROUTER_MODEL}",
             "models": Config.OPENROUTER_ALTERNATE_MODELS,  
             "messages": messages,
-            "HTTP-Referer": f"{Config.SITE_URL}",  
-            "X-Title": "Ember AI Chat"
         }
 
         headers = {
             "Authorization": f"Bearer {Config.OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
+            "HTTP-Referer": f"{Config.SITE_URL}",  
+            "X-Title": "Ember AI Chat"
         }
 
         async with aiohttp.ClientSession() as session:
