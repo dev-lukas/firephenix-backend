@@ -7,7 +7,7 @@ class Config:
     # Website
     SECRET_KEY = os.getenv('SECRET_KEY')
     STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
-    SITE_URL = 'https://beta.firephenix.de'
+    SITE_URL = 'https://firephenix.de'
     # Discord
     DISCORD_TOKEN=os.getenv("DISCORD_TOKEN")
     DISCORD_EXCLUDED_ROLE_ID="12312312312"
