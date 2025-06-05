@@ -103,7 +103,7 @@ class RankingSystem:
                             upranked_user = self.database.update_ranks(connected_users, platform)
                             for user_id, level in upranked_user:
                                 logging.info(f"User {user_id} has been upranked to level {level}")
-                                teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
+                                teamspeak_id, discord_id = self.database.get_platform_ids(platform, user_id)
                                 if discord_id:
                                     self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, level=level))
                                 if teamspeak_id:
@@ -112,7 +112,7 @@ class RankingSystem:
                             upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
                             for user_id, division in upranked_season_user:
                                 logging.info(f"User {user_id} has been upranked to division {division}")
-                                teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
+                                teamspeak_id, discord_id = self.database.get_platform_ids(platform, user_id)
                                 if discord_id:
                                     self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, division=division))
                                 if teamspeak_id:
