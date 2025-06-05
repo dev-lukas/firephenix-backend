@@ -33,6 +33,8 @@ class RankManager:
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             
+            logging.debug(f"User {uid} database rank and division: {rank} and {division}")
+            logging.debug(f"User {uid} should have group {self.config.TEAMSPEAK_LEVEL_MAP.get(rank)} and {self.config.TEAMSPEAK_DIVISION_MAP.get(division)}")
             logging.debug(f"User {uid} has groups: {group_ids}")
 
             correct_rank = False
