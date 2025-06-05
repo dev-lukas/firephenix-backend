@@ -529,6 +529,28 @@ class DatabaseManager:
         self.cursor.execute("SELECT last_daily_reset, last_weekly_reset, last_monthly_reset FROM reset_log WHERE id = 1")
         return self.cursor.fetchone()
 
+    @ensure_connection
+    def get_platform_ids(self, platform: str, platform_id: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Given a platform ('discord' or 'teamspeak') and the corresponding platform_id,
+        fetch the user and return a tuple (discord_id, teamspeak_id).
+        If one of the IDs is not set, return None for that value.
+        """
+        if platform not in ('discord', 'teamspeak'):
+            raise ValueError("platform must be 'discord' or 'teamspeak'")
+        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
+        query = f"""
+            SELECT discord_id, teamspeak_id
+            FROM user
+            WHERE {id_column} = ?
+        """
+        self.cursor.execute(query, (str(platform_id),))
+        result = self.cursor.fetchone()
+        if result:
+            return result[0], result[1]
+        else:
+            return None, None
+
     def close(self) -> None:
         """Close database connection"""
         try:

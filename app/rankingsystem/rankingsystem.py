@@ -101,19 +101,21 @@ class RankingSystem:
                         self.database.update_heatmap(connected_users, platform)
                         upranked_user = self.database.update_ranks(connected_users, platform)
                         for user_id, level in upranked_user:
-                            logging.info(f"User {user_id} has been upranked to level {level} on {platform}")
-                            if platform == 'discord':
-                                self.dc.bot.loop.create_task(self.dc.set_ranks(user_id, level=level))
-                            else:
-                                self.ts.set_ranks(user_id, level=level)
+                            logging.info(f"User {user_id} has been upranked to level {level}")
+                            teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
+                            if discord_id:
+                                self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, level=level))
+                            if teamspeak_id:
+                                self.ts.set_ranks(teamspeak_id, level=level)
 
                         upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
                         for user_id, division in upranked_season_user:
-                            logging.info(f"User {user_id} has been upranked to division {division} on {platform}")
-                            if platform == 'discord':
-                                self.dc.bot.loop.create_task(self.dc.set_ranks(user_id, division=division))
-                            else:
-                                self.ts.set_ranks(user_id, division=division)
+                            logging.info(f"User {user_id} has been upranked to division {division}")
+                            teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
+                            if discord_id:
+                                self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, division=division))
+                            if teamspeak_id:
+                                self.ts.set_ranks(teamspeak_id, division=division)
                 except DatabaseConnectionError:
                     logging.error("Database connection error")
                     continue   
