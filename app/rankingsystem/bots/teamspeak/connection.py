@@ -28,7 +28,7 @@ class ConnectionManager:
             )
             ts3conn.exec_("use", sid=self.server_id)
             ts3conn.exec_("servernotifyregister", event="server")
-            logging.info("Successfully connected to TeamSpeak server")
+            logging.debug("Successfully connected to TeamSpeak server")
             self.reconnect_delay = self.INITIAL_RECONNECT_DELAY
             return ts3conn
         except ts3.query.TS3QueryError as e:

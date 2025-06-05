@@ -101,7 +101,7 @@ class RankingSystem:
                         self.database.update_heatmap(connected_users, platform)
                         upranked_user = self.database.update_ranks(connected_users, platform)
                         for user_id, level in upranked_user:
-                            logging.debug(f"User {user_id} has been upranked to level {level} on {platform}")
+                            logging.info(f"User {user_id} has been upranked to level {level} on {platform}")
                             if platform == 'discord':
                                 self.dc.bot.loop.create_task(self.dc.set_ranks(user_id, level=level))
                             else:
@@ -109,7 +109,7 @@ class RankingSystem:
 
                         upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
                         for user_id, division in upranked_season_user:
-                            logging.debug(f"User {user_id} has been upranked to division {division} on {platform}")
+                            logging.info(f"User {user_id} has been upranked to division {division} on {platform}")
                             if platform == 'discord':
                                 self.dc.bot.loop.create_task(self.dc.set_ranks(user_id, division=division))
                             else:
