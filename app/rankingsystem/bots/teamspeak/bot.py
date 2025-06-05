@@ -32,8 +32,8 @@ class TeamspeakBot:
         self.last_validation = 0
         self.database = DatabaseManager()
         self.connection_manager = ConnectionManager(Config)
-        self.client_manager = ClientManager(Config)
         self.rank_manager = RankManager(Config, self.database, self.connection_manager)
+        self.client_manager = ClientManager(Config, self.rank_manager)
         self.channel_manager = ChannelManager(Config, self.connection_manager)
 
     def run(self):

@@ -10,11 +10,12 @@ logging = RankingLogger(__name__).get_logger()
 class ClientManager:
     """Manages TeamSpeak client information and tracking"""
     
-    def __init__(self, config):
+    def __init__(self, config, rank_manager: RankManager):
         self.excluded_role_id = config.TS3_EXCLUDED_ROLE_ID
         self.connected_users = set()
         self.client_uid_map = {}
         self.client_name_map = {}
+        self.rank_manager = rank_manager
     
     def handle_initial_clients(self, ts3conn):
         """Process existing clients after connection. This serves as a full rescan."""
@@ -205,7 +206,7 @@ class ClientManager:
                         
                     current_uids.add(uid)
                     current_clid_to_uid[client["clid"]] = uid
-                    RankManager().check_user_roles(uid, ts3conn)
+                    self.rank_manager.check_user_roles(uid, ts3conn)
                     
                 except ts3.query.TS3QueryError as e:
                     logging.warning(f"Error getting info for client {client.get('clid')}: {e}")
