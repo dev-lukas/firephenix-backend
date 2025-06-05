@@ -37,88 +37,92 @@ class RankingSystem:
         """Main loop for the ranksystem"""
         last_users = {platform: [] for platform in self.platforms}
         while self.running:
-            now = datetime.now()
-            next_full_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            time_until_full_run = (next_full_run - now).total_seconds()
-            valkey_update_count = max(1, int(time_until_full_run / Config.VALKEY_UPDATE_INTERVAL))
-            
-            resets = self.database.get_last_resets()
-            last_daily, last_weekly, last_monthly = resets if resets else (None, None, None)
-            today = now.date()
-            weekday = now.weekday()
-            first_of_month = now.day == 1
+            try:
+                now = datetime.now()
+                next_full_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+                time_until_full_run = (next_full_run - now).total_seconds()
+                valkey_update_count = max(1, int(time_until_full_run / Config.VALKEY_UPDATE_INTERVAL))
+                
+                resets = self.database.get_last_resets()
+                last_daily, last_weekly, last_monthly = resets if resets else (None, None, None)
+                today = now.date()
+                weekday = now.weekday()
+                first_of_month = now.day == 1
 
-            
-            if not last_daily or (last_daily.date() != today):
-                self.database.reset_time('daily')
-                logging.info(f"Performed daily time reset at {now}")
+                
+                if not last_daily or (last_daily.date() != today):
+                    self.database.reset_time('daily')
+                    logging.info(f"Performed daily time reset at {now}")
 
-            if weekday == 0 and (not last_weekly or last_weekly.date() != today):
-                self.database.reset_time('weekly')
-                logging.info(f"Performed weekly time reset at {now}")
+                if weekday == 0 and (not last_weekly or last_weekly.date() != today):
+                    self.database.reset_time('weekly')
+                    logging.info(f"Performed weekly time reset at {now}")
 
-            if first_of_month and (not last_monthly or last_monthly.month != now.month or last_monthly.year != now.year):
-                self.database.reset_time('monthly')
-                logging.info(f"Performed monthly time reset at {now}")
+                if first_of_month and (not last_monthly or last_monthly.month != now.month or last_monthly.year != now.year):
+                    self.database.reset_time('monthly')
+                    logging.info(f"Performed monthly time reset at {now}")
 
 
-            for _ in range(valkey_update_count):
-                if not self.running:
-                    exit()
-                for platform in self.platforms:
-                    connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
-                    try:
-                        self.valkey.set(f'{platform}:online_users', json.dumps(connected_users), ex=20)
-                    except valkey.ConnectionError as e:
-                        logging.error(f"Valkey connection error: {e}")
+                for _ in range(valkey_update_count):
+                    if not self.running:
+                        exit()
+                    for platform in self.platforms:
+                        connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
+                        try:
+                            self.valkey.set(f'{platform}:online_users', json.dumps(connected_users), ex=20)
+                        except valkey.ConnectionError as e:
+                            logging.error(f"Valkey connection error: {e}")
+                            break
+                    time_left = (next_full_run - datetime.now()).total_seconds()
+                    if time_left < Config.VALKEY_UPDATE_INTERVAL:
                         break
+                    time.sleep(Config.VALKEY_UPDATE_INTERVAL)
                 time_left = (next_full_run - datetime.now()).total_seconds()
-                if time_left < Config.VALKEY_UPDATE_INTERVAL:
-                    break
-                time.sleep(Config.VALKEY_UPDATE_INTERVAL)
-            time_left = (next_full_run - datetime.now()).total_seconds()
-            if time_left > 0:
-                time.sleep(time_left)
-            
-            for platform in self.platforms:
-                try:    
-                    connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
-                    
-                    if datetime.now().minute == 0:
-                        self.database.log_usage_stats(
-                            user_count=len(connected_users),
-                            platform=platform
-                        )
+                if time_left > 0:
+                    time.sleep(time_left)
+                
+                for platform in self.platforms:
+                    try:    
+                        connected_users, names = self.ts.get_online_users() if platform == 'teamspeak' else self.dc.get_online_users()
+                        
+                        if datetime.now().minute == 0:
+                            self.database.log_usage_stats(
+                                user_count=len(connected_users),
+                                platform=platform
+                            )
 
-                    if connected_users and names:
-                        for user_id in connected_users:
-                            if user_id not in last_users[platform]:
-                                self.database.update_user_name(user_id, names[user_id], platform)
-                                self.database.update_login_streak(user_id, platform) 
+                        if connected_users and names:
+                            for user_id in connected_users:
+                                if user_id not in last_users[platform]:
+                                    self.database.update_user_name(user_id, names[user_id], platform)
+                                    self.database.update_login_streak(user_id, platform) 
 
-                        last_users[platform] = connected_users
-                        self.database.update_times(connected_users, platform)
-                        self.database.update_heatmap(connected_users, platform)
-                        upranked_user = self.database.update_ranks(connected_users, platform)
-                        for user_id, level in upranked_user:
-                            logging.info(f"User {user_id} has been upranked to level {level}")
-                            teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
-                            if discord_id:
-                                self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, level=level))
-                            if teamspeak_id:
-                                self.ts.set_ranks(teamspeak_id, level=level)
+                            last_users[platform] = connected_users
+                            self.database.update_times(connected_users, platform)
+                            self.database.update_heatmap(connected_users, platform)
+                            upranked_user = self.database.update_ranks(connected_users, platform)
+                            for user_id, level in upranked_user:
+                                logging.info(f"User {user_id} has been upranked to level {level}")
+                                teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
+                                if discord_id:
+                                    self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, level=level))
+                                if teamspeak_id:
+                                    self.ts.set_ranks(teamspeak_id, level=level)
 
-                        upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
-                        for user_id, division in upranked_season_user:
-                            logging.info(f"User {user_id} has been upranked to division {division}")
-                            teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
-                            if discord_id:
-                                self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, division=division))
-                            if teamspeak_id:
-                                self.ts.set_ranks(teamspeak_id, division=division)
-                except DatabaseConnectionError:
-                    logging.error("Database connection error")
-                    continue   
+                            upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
+                            for user_id, division in upranked_season_user:
+                                logging.info(f"User {user_id} has been upranked to division {division}")
+                                teamspeak_id, discord_id = self.database.get_platform_ids(user_id, platform)
+                                if discord_id:
+                                    self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, division=division))
+                                if teamspeak_id:
+                                    self.ts.set_ranks(teamspeak_id, division=division)
+                    except DatabaseConnectionError:
+                        logging.error("Database connection error")
+                        continue
+            except Exception as e:
+                logging.error(f"Error in main loop for {platform}: {e}")
+                continue
 
     def run(self) -> bool:
         """Main runner function"""         
