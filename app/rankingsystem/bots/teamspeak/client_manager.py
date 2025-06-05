@@ -3,6 +3,7 @@ import requests
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.utils.database import DatabaseManager
+from app.rankingsystem.bots.teamspeak.rank_manager import RankManager
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -204,6 +205,7 @@ class ClientManager:
                         
                     current_uids.add(uid)
                     current_clid_to_uid[client["clid"]] = uid
+                    RankManager().check_user_roles(uid, ts3conn)
                     
                 except ts3.query.TS3QueryError as e:
                     logging.warning(f"Error getting info for client {client.get('clid')}: {e}")

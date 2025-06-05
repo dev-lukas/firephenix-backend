@@ -130,6 +130,7 @@ class ClientManager(commands.Cog):
             for member in voice_channel.members:
                 if not member.bot:  # Ignore bots
                     current_voice_users.add(member.id)
+                    await self.check_user_roles(member.id)
                     if member.id not in self.user_name_map or self.user_name_map[member.id] != member.display_name:
                         self.user_name_map[member.id] = member.display_name
                         logging.debug(f"Updated username for {member.id}: {member.display_name}")
