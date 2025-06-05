@@ -1,5 +1,5 @@
-import asyncio
 import aiohttp
+import asyncio
 from app.config import Config
 from app.utils.database import DatabaseManager
 from app.utils.logger import RankingLogger
@@ -8,24 +8,41 @@ logging = RankingLogger(__name__).get_logger()
 
 async def handle_chat_message(message):
     """
-    Collect the last 15 messages from the channel and ask OpenRouter for a reply.
+    Collect the last 3 messages from the user triggering the chat and ask OpenRouter for a reply.
     """
     try:
         messages = []
-        messages.append({"role": "system", "content": f"{Config.OPENROUTER_INITIAL_PROMPT}"})
-        messages.append({"role": "system", "content": f"{await fetch_user_info_string(message.author.id)}"})
+        # Improved, concise system prompt with server knowledge
+        system_prompt = (
+            "Du bist Ember, ein freundlicher, hilfsbereiter Phönix-Bot für die FirePhenix-Community. "
+            "Antworte klar, motivierend und respektvoll. Hilf bei Fragen zu Server, Spielen, Events und Technik. "
+            "Keine Beleidigungen, keine Emojis, keine Feuerwitze. Antworte nur auf die letzte Frage des Users, nutze vorherige Nachrichten nur als Kontext. "
+            "Halte Antworten unter 1500 Zeichen.\n"
+            "Server-Infos: Es gibt einen Discord- und einen TeamSpeak-Server, ein Ranking- und Season-System basierend auf Spielzeit (Level 1-20, dann Prestige I-V, Division Bronze bis Phönix). "
+            "Mehr Infos auf firephenix.de. TTT-Server: gaming.firephenix.de. Hilfe von Moderatoren Erik, Philip oder Admin Lukas. "
+            "Move-Shield und TeamSpeak-Zeit-Übertragung über die Website möglich. Für Seasons gibt es kosmetische Belohnungen."
+        )
+        messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "system", "content": await fetch_user_info_string(message.author.id)})
 
-        catched_trigger_message = False
-        await asyncio.sleep(0.2)
-        
-        async for msg in message.channel.history(limit=15, oldest_first=True):
-            role = "assistant" if msg.author.bot else f"user {msg.author.id}"
-            messages.append({"role": role, "content": msg.content})
-            if msg.content == message.content:
-                catched_trigger_message = True
+        await asyncio.sleep(0.3)
 
-        if not catched_trigger_message:
-            messages.append({"role": f"user {message.author.id}", "content": message.content})
+        # --- Session memory: fetch last user and bot message (if any) ---
+        user_msgs = []
+        bot_msgs = []
+        async for msg in message.channel.history(limit=10, oldest_first=True):
+            if msg.author.id == message.author.id and msg.id != message.id:
+                user_msgs.append(msg)
+            elif msg.author.bot:
+                bot_msgs.append(msg)
+        # Add last user message (before current)
+        if user_msgs:
+            messages.append({"role": "user", "content": user_msgs[-1].content})
+        # Add last bot response (if any)
+        if bot_msgs:
+            messages.append({"role": "assistant", "content": bot_msgs[-1].content})
+        # Always add the current user message last
+        messages.append({"role": "user", "content": message.content})
 
         payload = {
             "model": f"{Config.OPENROUTER_MODEL}",
@@ -50,6 +67,9 @@ async def handle_chat_message(message):
                     data = await resp.json()
 
                     logging.debug(f"Received response from OpenRouter: {data}")
+
+                    if not data["choices"][0]["message"]["content"]:
+                        return None
 
                     return data["choices"][0]["message"]["content"]
                 else:

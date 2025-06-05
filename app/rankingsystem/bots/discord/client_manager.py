@@ -290,3 +290,5 @@ class ClientManager(commands.Cog):
             response = await handle_chat_message(message)
             if response:
                 await message.channel.send(response)
+            else:
+                await message.channel.send(stickers=[discord.Object(id=Config.DISCORD_EMBER_STICKER)])

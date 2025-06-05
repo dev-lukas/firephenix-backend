@@ -363,11 +363,14 @@ class DatabaseManager:
                 self.cursor.execute(update_query, 
                                 (calculated_division, platform_uid))
                 rankups.append((platform_uid, calculated_division))
+                logging.debug(f"Updated {platform} user {platform_uid} to division {calculated_division}")
 
         rankups = self._update_top_division_ranks(platform, rankups)
 
         self.conn.commit()
 
+        if rankups:
+            logging.debug(f"Rank updates for {platform} users: {rankups}")
         return rankups
 
     @ensure_connection

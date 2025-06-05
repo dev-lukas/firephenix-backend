@@ -111,9 +111,10 @@ class ClientManager:
             return uid
         except ts3.query.TS3QueryError as e:
             logging.warning(f"Error handling client connect for clid {clid} (user may have disconnected): {e}")
+            return None
         except Exception as ex:
             logging.error(f"Unexpected error in handle_client_connect for clid {clid}: {ex}")
-        return None
+            return None
 
     def check_vpn_and_kick_if_needed(self, client_info, clid, ts3conn):
         """Check if the user's IP is VPN/Tor and kick if level is too low."""
