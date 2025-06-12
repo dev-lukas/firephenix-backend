@@ -97,10 +97,11 @@ def verify_code():
         db.execute_query("START TRANSACTION")
         
         existing_users = db.execute_query("""
-            SELECT id, steam_id, discord_id, teamspeak_id, name, level, division
+            SELECT id, steam_id, discord_id, teamspeak_id, name, level, division,
+                   discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable
             FROM user
             WHERE steam_id = ?
-        """, (steam_id,))        
+        """, (steam_id,))
         
         if not existing_users:
             db.execute_query(f"""
@@ -114,7 +115,7 @@ def verify_code():
             primary_id = primary_user[0]
             
             user_to_merge = db.execute_query(f"""
-                SELECT level, division
+                SELECT level, division, discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable
                 FROM user
                 WHERE {platform}_id = ?
             """, (platform_id,))
@@ -122,14 +123,32 @@ def verify_code():
             if user_to_merge:
                 merge_level = user_to_merge[0][0] or 1
                 merge_division = user_to_merge[0][1] or 1
+                merge_discord_channel = user_to_merge[0][2]
+                merge_teamspeak_channel = user_to_merge[0][3]
+                merge_discord_moveable = user_to_merge[0][4]
+                merge_teamspeak_moveable = user_to_merge[0][5]
+                
                 primary_level = primary_user[5] or 1  
                 primary_division = primary_user[6] or 1
+                primary_discord_channel = primary_user[7]
+                primary_teamspeak_channel = primary_user[8]
+                primary_discord_moveable = primary_user[9]
+                primary_teamspeak_moveable = primary_user[10]
                 
                 max_level = max(primary_level, merge_level)
                 max_division = max(primary_division, merge_division)
+                
+                final_discord_channel = merge_discord_channel if merge_discord_channel else primary_discord_channel
+                final_teamspeak_channel = merge_teamspeak_channel if merge_teamspeak_channel else primary_teamspeak_channel
+                final_discord_moveable = merge_discord_moveable if merge_discord_moveable is True else primary_discord_moveable
+                final_teamspeak_moveable = merge_teamspeak_moveable if merge_teamspeak_moveable is True else primary_teamspeak_moveable
             else:
                 max_level = primary_user[5] or 1
                 max_division = primary_user[6] or 1
+                final_discord_channel = primary_user[7]
+                final_teamspeak_channel = primary_user[8]
+                final_discord_moveable = primary_user[9]
+                final_teamspeak_moveable = primary_user[10]
             
             db.execute_query(f"""
                 DELETE FROM user
@@ -141,9 +160,15 @@ def verify_code():
                 SET steam_id = ?,
                     {platform}_id = ?,
                     level = ?,
-                    division = ?
+                    division = ?,
+                    discord_channel = ?,
+                    teamspeak_channel = ?,
+                    discord_moveable = ?,
+                    teamspeak_moveable = ?
                 WHERE id = ?
-            """, (steam_id, platform_id, max_level, max_division, primary_id))
+            """, (steam_id, platform_id, max_level, max_division, 
+                  final_discord_channel, final_teamspeak_channel, 
+                  final_discord_moveable, final_teamspeak_moveable, primary_id))
 
         db.execute_query("COMMIT")
         db.close()
