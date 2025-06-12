@@ -551,6 +551,30 @@ class DatabaseManager:
         else:
             return None, None
 
+    @ensure_connection
+    def has_time_entry(self, platform_uid: Union[int, str], platform: str) -> bool:
+        """
+        Check if a time entry exists for the given platform UID and platform.
+        
+        Args:
+            platform_uid: The platform user ID (Discord ID or TeamSpeak UID)
+            platform: The platform ('discord' or 'teamspeak')
+            
+        Returns:
+            bool: True if a time entry exists, False otherwise
+        """
+        if platform not in ('discord', 'teamspeak'):
+            raise ValueError("platform must be 'discord' or 'teamspeak'")
+            
+        query = """
+            SELECT 1 FROM time 
+            WHERE platform_uid = ? AND platform = ?
+            LIMIT 1
+        """
+        self.cursor.execute(query, (str(platform_uid), platform))
+        result = self.cursor.fetchone()
+        return result is not None
+
     def close(self) -> None:
         """Close database connection"""
         try:

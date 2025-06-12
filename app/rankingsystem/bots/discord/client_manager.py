@@ -81,11 +81,14 @@ class ClientManager(commands.Cog):
             )
             return None
         
-        if rank is None:
+        if rank is None or division is None:
+            if self.database.has_time_entry(user_id, "discord"):
+                logging.warning(f"User {user_id} has no rank or division set in the database, but has time entries. Seems like the database failed to fetch. Skipping.")
+                return None
+            else:
+                logging.info(f"User {user_id} has no rank or time set in the database yet; welcome new user!")
                 rank = 1
-                
-        if division is None:
-            division = 1
+                division = 1
 
         if check_type in ["rank", "both"]:
             correct_rank = False

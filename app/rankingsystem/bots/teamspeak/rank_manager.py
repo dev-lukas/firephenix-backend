@@ -25,10 +25,14 @@ class RankManager:
                 logging.error("Database connection error in check_user_roles. Skipping.")
                 return
             
-            if rank is None:
-                rank = 1
-            if division is None:
-                division = 1
+            if rank is None or division is None:
+                if self.db.has_time_entry(uid, "teamspeak"):
+                    logging.warning(f"User {uid} has no rank or division set in the database, but has time entries. Seems like the database failed to fetch. Skipping.")
+                    return
+                else:
+                    logging.info(f"User {uid} has no rank or time set in the database yet; welcome new user!")
+                    rank = 1
+                    division = 1
 
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
