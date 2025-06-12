@@ -6,7 +6,7 @@ __all__ = ['RankingLogger']
 class RankingLogger:
     def __init__(self, name):
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
         
         if not self.logger.handlers:
             self.formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

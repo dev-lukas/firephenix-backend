@@ -206,7 +206,6 @@ class ClientManager:
                         
                     current_uids.add(uid)
                     current_clid_to_uid[client["clid"]] = uid
-                    self.rank_manager.check_user_roles(uid, ts3conn)
                     
                 except ts3.query.TS3QueryError as e:
                     logging.warning(f"Error getting info for client {client.get('clid')}: {e}")

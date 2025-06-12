@@ -41,6 +41,7 @@ class RankingSystem:
                 now = datetime.now()
                 next_full_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
                 time_until_full_run = (next_full_run - now).total_seconds()
+                logging.debug(f"Time until next full run: {time_until_full_run} seconds")
                 valkey_update_count = max(1, int(time_until_full_run / Config.VALKEY_UPDATE_INTERVAL))
                 
                 resets = self.database.get_last_resets()
@@ -100,23 +101,14 @@ class RankingSystem:
                             last_users[platform] = connected_users
                             self.database.update_times(connected_users, platform)
                             self.database.update_heatmap(connected_users, platform)
-                            upranked_user = self.database.update_ranks(connected_users, platform)
-                            for user_id, level in upranked_user:
-                                logging.info(f"User {user_id} has been upranked to level {level}")
-                                discord_id, teamspeak_id = self.database.get_platform_ids(platform, user_id)
-                                if discord_id:
-                                    self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, level=level))
-                                if teamspeak_id:
-                                    self.ts.set_ranks(teamspeak_id, level=level)
+                            self.database.update_ranks(connected_users, platform)
+                            self.database.update_seasonal_ranks(connected_users, platform)
+                            for user_id in connected_users:
+                                if platform == 'discord':
+                                    self.dc.bot.loop.create_task(self.dc.check_ranks(user_id, check_type="both"))
+                                elif platform == 'teamspeak':
+                                    self.ts.check_ranks(user_id)
 
-                            upranked_season_user = self.database.update_seasonal_ranks(connected_users, platform)
-                            for user_id, division in upranked_season_user:
-                                logging.info(f"User {user_id} has been upranked to division {division}")
-                                discord_id, teamspeak_id = self.database.get_platform_ids(platform, user_id)
-                                if discord_id:
-                                    self.dc.bot.loop.create_task(self.dc.set_ranks(discord_id, division=division))
-                                if teamspeak_id:
-                                    self.ts.set_ranks(teamspeak_id, division=division)
                     except DatabaseConnectionError:
                         logging.error("Database connection error")
                         continue
