@@ -100,8 +100,8 @@ def verify_code():
             SELECT id, steam_id, discord_id, teamspeak_id, name, level, division
             FROM user
             WHERE steam_id = ?
-        """, (steam_id,))
-
+        """, (steam_id,))        
+        
         if not existing_users:
             db.execute_query(f"""
                 UPDATE user 
@@ -109,9 +109,27 @@ def verify_code():
                 WHERE {platform}_id = ?
             """, (steam_id, platform_id))
         
-        else:
+        else:        
             primary_user = min(existing_users, key=lambda x: x[0])
             primary_id = primary_user[0]
+            
+            user_to_merge = db.execute_query(f"""
+                SELECT level, division
+                FROM user
+                WHERE {platform}_id = ?
+            """, (platform_id,))
+            
+            if user_to_merge:
+                merge_level = user_to_merge[0][0] or 1
+                merge_division = user_to_merge[0][1] or 1
+                primary_level = primary_user[5] or 1  
+                primary_division = primary_user[6] or 1
+                
+                max_level = max(primary_level, merge_level)
+                max_division = max(primary_division, merge_division)
+            else:
+                max_level = primary_user[5] or 1
+                max_division = primary_user[6] or 1
             
             db.execute_query(f"""
                 DELETE FROM user
@@ -121,9 +139,11 @@ def verify_code():
             db.execute_query(f"""
                 UPDATE user
                 SET steam_id = ?,
-                    {platform}_id = ?
+                    {platform}_id = ?,
+                    level = ?,
+                    division = ?
                 WHERE id = ?
-            """, (steam_id, platform_id, primary_id))
+            """, (steam_id, platform_id, max_level, max_division, primary_id))
 
         db.execute_query("COMMIT")
         db.close()
