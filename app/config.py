@@ -1,9 +1,12 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
 
 class Config:
+    # Logger Level
+    LOGGER_LEVEL = logging.INFO
     # Website
     SECRET_KEY = os.getenv('SECRET_KEY')
     STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'

@@ -1,4 +1,5 @@
 import logging
+from app.config import Config
 
 __all__ = ['RankingLogger']
 
@@ -6,7 +7,7 @@ __all__ = ['RankingLogger']
 class RankingLogger:
     def __init__(self, name):
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(Config.LOGGER_LEVEL)
         
         if not self.logger.handlers:
             self.formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
