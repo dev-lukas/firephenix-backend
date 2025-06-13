@@ -164,7 +164,7 @@ def get_connected_users():
         time_to_next_division = 0
         if user_data[4] < 25:
             next_level_req = Config.get_level_requirement(user_data[4] + 1)
-            time_to_next_level = max(0, next_level_req - user_data[8])
+            time_to_next_level = max(0, next_level_req - user_data[10])
         
         if user_data[5] < 5:
             next_division_req = Config.get_division_requirement(user_data[5] + 1)
