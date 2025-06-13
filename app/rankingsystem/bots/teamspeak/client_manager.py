@@ -107,7 +107,7 @@ class ClientManager:
             self.connected_users.add(uid)
             self.client_uid_map[clid] = uid
             self.client_name_map[uid] = name
-            logging.info(f"User connected: {name} ({uid})")
+            logging.debug(f"User connected: {name} ({uid})")
             
             self.check_vpn_and_kick_if_needed(client_info, clid, ts3conn)
             return uid
@@ -159,7 +159,7 @@ class ClientManager:
             if uid in self.connected_users:
                 self.connected_users.remove(uid)
             name = self.client_name_map.pop(uid, "Unknown") 
-            logging.info(f"User disconnected: {name} ({uid}). Reason ID: {event.get('reasonid', 'N/A')}")
+            logging.debug(f"User disconnected: {name} ({uid}). Reason ID: {event.get('reasonid', 'N/A')}")
         else:
             logging.debug(f"Received disconnect for untracked clid: {clid}")
         return uid
@@ -214,16 +214,16 @@ class ClientManager:
             # Find users in our tracking that are no longer connected
             stale_users = self.connected_users - current_uids
             if stale_users:
-                logging.info(f"Found {len(stale_users)} stale users, removing them")
+                logging.warning(f"Found {len(stale_users)} stale users, removing them")
                 for uid in stale_users:
                     self.connected_users.discard(uid)
                     name = self.client_name_map.pop(uid, "Unknown")
-                    logging.info(f"Removed stale user: {name} ({uid})")
+                    logging.debug(f"Removed stale user: {name} ({uid})")
             
             # Find users connected but not in our tracking
             missing_users = current_uids - self.connected_users
             if missing_users:
-                logging.info(f"Found {len(missing_users)} missing users, adding them")
+                logging.warning(f"Found {len(missing_users)} missing users, adding them")
                 for uid in missing_users:
                     self.connected_users.add(uid)
                     # Find the name for this UID
@@ -234,7 +234,7 @@ class ClientManager:
                                 name = client_info.get("client_nickname", "Unknown")
                                 self.client_name_map[uid] = name
                                 self.client_uid_map[clid] = uid
-                                logging.info(f"Added missing user: {name} ({uid})")
+                                logging.debug(f"Added missing user: {name} ({uid})")
                                 break
                             except ts3.query.TS3QueryError:
                                 continue
