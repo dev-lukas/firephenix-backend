@@ -407,6 +407,7 @@ class DatabaseManager:
                     logging.debug(f"Demoted user {platform_uid} to Division 5")
                     rankups.append((platform_uid, 5))
         
+        self.conn.commit()
         return rankups
     
     @ensure_connection
