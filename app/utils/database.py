@@ -437,15 +437,20 @@ class DatabaseManager:
     def get_user_roles(self, user_id: Union[int, str], platform: str) -> Tuple[Optional[int], Optional[int]]:
         """
         Get the rank (level) of a user based on their TeamSpeak or Discord ID.
+        Forces fresh results by ensuring any pending transactions are committed.
 
         Args:
             user_id: The user's unique identifier (TeamSpeak UID or Discord ID)
             platform: The platform ('discord' or 'teamspeak')
 
         Returns:
-            Optional[int]: The user's rank (level) or None if not found
+            Tuple[Optional[int], Optional[int]]: The user's (level, division) or (None, None) if not found
         """
         id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
+
+        # Force fresh data by committing any pending transactions
+        if not self.conn.autocommit:
+            self.conn.commit()
 
         query = f"""
             SELECT level, division
