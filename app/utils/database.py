@@ -493,13 +493,13 @@ class DatabaseManager:
         self.cursor.execute("""
             INSERT INTO login_streak
                 (platform_uid, platform, logins, current_streak, longest_streak, last_login) 
-            VALUES (?, ?, 1, 1, 1, ?)
+            VALUES (?, ?, 1, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 logins = logins + 1,
                 current_streak = VALUES(current_streak),
                 longest_streak = VALUES(longest_streak),
                 last_login = VALUES(last_login)
-        """, (str(platform_uid), platform, today, current_streak, longest_streak, today))
+        """, (str(platform_uid), platform, current_streak, longest_streak, today))
         
         self.conn.commit()
 
