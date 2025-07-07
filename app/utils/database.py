@@ -479,23 +479,26 @@ class DatabaseManager:
         else:
             current_streak = 0
             longest_streak = 0
-            last_login = today
-            
-        if (today - last_login).days == 1:
+            last_login = None
+        
+        if last_login == today:
+            pass
+        elif last_login and (today - last_login).days == 1:
             current_streak += 1
             longest_streak = max(longest_streak, current_streak)
         else:
             current_streak = 1
-            
+            longest_streak = max(longest_streak, current_streak)
+        
         self.cursor.execute("""
             INSERT INTO login_streak
                 (platform_uid, platform, logins, current_streak, longest_streak, last_login) 
             VALUES (?, ?, 1, 1, 1, ?)
             ON DUPLICATE KEY UPDATE
                 logins = logins + 1,
-                current_streak = ?,
-                longest_streak = ?,
-                last_login = ?
+                current_streak = VALUES(current_streak),
+                longest_streak = VALUES(longest_streak),
+                last_login = VALUES(last_login)
         """, (str(platform_uid), platform, today, current_streak, longest_streak, today))
         
         self.conn.commit()
