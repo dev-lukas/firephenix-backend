@@ -15,7 +15,7 @@ def get_ranking():
     search = request.args.get('search', '')
     limit = min(int(request.args.get('limit', 10)), 50)
     
-    offset = (page - 1)
+    offset = (page - 1) * limit
     
     db = DatabaseManager()
     
