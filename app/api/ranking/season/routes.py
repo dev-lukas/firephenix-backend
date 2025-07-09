@@ -13,8 +13,8 @@ ranking_season_bp = Blueprint('ranking_season', __name__)
 def get_ranking():
     page = int(request.args.get('page', 1))
     search = request.args.get('search', '')
+    limit = min(int(request.args.get('limit', 10)), 50)
     
-    limit = 50
     offset = (page - 1)
     
     db = DatabaseManager()
