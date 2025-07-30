@@ -130,9 +130,9 @@ def get_achievements():
 
     streak_achievement = 0
     if longest_streak >= 30:
-        streak_achievement = 3
+        streak_achievement = 4
     elif longest_streak >= 14:
-        streak_achievement = 2
+        streak_achievement = 3
     elif longest_streak >= 7:
         streak_achievement = 2
     elif longest_streak >= 2:
