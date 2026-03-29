@@ -10,7 +10,7 @@ class Config:
     # Website
     SECRET_KEY = os.getenv('SECRET_KEY')
     STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
-    SITE_URL = 'https://firephenix.de'
+    SITE_URL = os.getenv("SITE_URL", "https://firephenix.de")
     # Discord
     DISCORD_TOKEN=os.getenv("DISCORD_TOKEN")
     DISCORD_EXCLUDED_ROLE_ID="12312312312"
@@ -23,8 +23,8 @@ class Config:
     DISCORD_CHAT_CHANNEL=292753223536869376
     DISCORD_EMBER_STICKER=1376678129250074716
     # TeamSpeak
-    TS3_HOST="127.0.0.1"
-    TS3_PORT="10011"
+    TS3_HOST=os.getenv("TS3_HOST", "127.0.0.1")
+    TS3_PORT=os.getenv("TS3_PORT", "10011")
     TS3_USERNAME="serveradmin"
     TS3_SERVER_ID="1"
     TS3_EXCLUDED_ROLE_ID="40"
@@ -34,14 +34,14 @@ class Config:
     TS3_OWNER_GROUP_ID = 5
     TS3_MOVE_BLOCK_ID = 41
     # Database
-    DB_HOST="127.0.0.1"
-    DB_PORT="3306"
+    DB_HOST=os.getenv("DB_HOST", "127.0.0.1")
+    DB_PORT=os.getenv("DB_PORT", "3306")
     DB_USER=os.getenv("DB_USER")
     DB_NAME="firephenix"
     DB_PASSWORD=os.getenv("DB_PASSWORD")
     # Valkey
-    VALKEY_HOST = 'localhost'
-    VALKEY_PORT = 6379
+    VALKEY_HOST = os.getenv("VALKEY_HOST", "localhost")
+    VALKEY_PORT = int(os.getenv("VALKEY_PORT", "6379"))
     VALKEY_DB = 0
     VALKEY_UPDATE_INTERVAL = 2
     # Limiter

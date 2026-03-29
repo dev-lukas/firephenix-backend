@@ -30,7 +30,7 @@ def create_app():
 
     app.config.update(
         SECRET_KEY=Config.SECRET_KEY,
-        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_SECURE=Config.SITE_URL.startswith('https'),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
         PERMANENT_SESSION_LIFETIME=timedelta(hours=24)

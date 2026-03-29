@@ -38,8 +38,12 @@ def get_ranking():
             COALESCE(d.monthly_time, 0) + COALESCE(t.monthly_time, 0) as monthly_time,
             COALESCE(d.weekly_time, 0) + COALESCE(t.weekly_time, 0) as weekly_time,
             COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) as season_time,
+            COALESCE(d.daily_time, 0) + COALESCE(t.daily_time, 0) as daily_time,
+            COALESCE(d.total_time, 0) as discord_time,
+            COALESCE(t.total_time, 0) as teamspeak_time,
             u.discord_id,
-            u.teamspeak_id
+            u.teamspeak_id,
+            u.created_at
         FROM user u
         LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
@@ -71,7 +75,8 @@ def get_ranking():
         return jsonify({'error': 'User not found'}), 404
 
     (id, rank, name, level, division, total_time, monthly_time, weekly_time, season_time,
-        discord_id, teamspeak_id, total_users, mean_time, best_time) = user_data
+        daily_time, discord_time, teamspeak_time, discord_id, teamspeak_id, created_at,
+        total_users, mean_time, best_time) = user_data
 
     db.cursor.execute(streak_query, (discord_id, teamspeak_id))
     streak_data = db.cursor.fetchall()
@@ -203,12 +208,18 @@ def get_ranking():
         'monthly_time': monthly_time,
         'weekly_time': weekly_time,
         'season_time': season_time,
+        'daily_time': daily_time,
         'time_to_next_level': time_to_next_level,
         'time_to_next_division': time_to_next_division,
         'rank_percentage': rank_percentage,
         'mean_total_time': mean_time,
         'best_player_time': best_time,
         'best_division_achieved': best_division_achieved,
+        'created_at': created_at.isoformat() if created_at else None,
+        'platform_time': {
+            'discord': discord_time,
+            'teamspeak': teamspeak_time
+        },
         'activity_heatmap': {
             'data': heatmap
         },

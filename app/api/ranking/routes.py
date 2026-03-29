@@ -91,7 +91,7 @@ def get_ranking():
             else:
                 hours = time_diff.seconds // 3600
                 if hours > 0:
-                    last_online = f"vor {hours} Studen"
+                    last_online = f"vor {hours} Stunden"
                     if hours == 1:
                         last_online = "Vor einer Stunde"
                 else:
