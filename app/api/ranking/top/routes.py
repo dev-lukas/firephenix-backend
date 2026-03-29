@@ -83,15 +83,85 @@ def get_hall_of_fame():
         ORDER BY val DESC LIMIT 3
     """)
 
-    most_achievements = query_top3("""
-        SELECT u.id, COALESCE(u.name,'Unknown'), u.level, COUNT(DISTINCT sa.achievement_type) as val
+    # Achievements are computed from multiple sources, not a single table count.
+    # We need to replicate the achievement calculation logic per user.
+    ach_query = """
+        SELECT
+            u.id, COALESCE(u.name,'Unknown') as name, u.level,
+            u.discord_id, u.teamspeak_id,
+            COALESCE(SUM(CASE WHEN t.platform='discord' THEN t.total_time ELSE 0 END) +
+                     SUM(CASE WHEN t.platform='teamspeak' THEN t.total_time ELSE 0 END), 0) as total_time,
+            (SELECT MAX(ls2.longest_streak) FROM login_streak ls2
+             WHERE (ls2.platform='discord' AND ls2.platform_uid=u.discord_id)
+                OR (ls2.platform='teamspeak' AND ls2.platform_uid=u.teamspeak_id)) as longest_streak,
+            (SELECT SUM(ls3.logins) FROM login_streak ls3
+             WHERE (ls3.platform='discord' AND ls3.platform_uid=u.discord_id)
+                OR (ls3.platform='teamspeak' AND ls3.platform_uid=u.teamspeak_id)) as total_logins,
+            (SELECT COUNT(DISTINCT CONCAT(ah.day_of_week,'_',ah.time_category))
+             FROM activity_heatmap ah
+             WHERE ((ah.platform='discord' AND ah.platform_uid=u.discord_id)
+                 OR (ah.platform='teamspeak' AND ah.platform_uid=u.teamspeak_id))
+               AND ah.activity_minutes > 0) as active_slots,
+            (SELECT COUNT(DISTINCT ah2.day_of_week)
+             FROM activity_heatmap ah2
+             WHERE ((ah2.platform='discord' AND ah2.platform_uid=u.discord_id)
+                 OR (ah2.platform='teamspeak' AND ah2.platform_uid=u.teamspeak_id))
+               AND ah2.activity_minutes > 0) as active_days
         FROM user u
-        INNER JOIN special_achievements sa ON
-            (sa.platform='discord' AND sa.platform_id=u.discord_id) OR
-            (sa.platform='teamspeak' AND sa.platform_id=u.teamspeak_id)
-        GROUP BY u.id, u.name, u.level
-        ORDER BY val DESC LIMIT 3
-    """)
+        LEFT JOIN time t ON
+            (t.platform='discord' AND t.platform_uid=u.discord_id) OR
+            (t.platform='teamspeak' AND t.platform_uid=u.teamspeak_id)
+        WHERE u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL
+        GROUP BY u.id, u.name, u.level, u.discord_id, u.teamspeak_id
+    """
+    ach_rows = db.execute_query(ach_query) or []
+
+    # Get all special achievements in one query
+    sa_query = "SELECT platform, platform_id, achievement_type FROM special_achievements"
+    sa_rows = db.execute_query(sa_query) or []
+    # Build lookup: platform_id -> set of achievement_types
+    sa_map = {}
+    for platform, pid, atype in sa_rows:
+        sa_map.setdefault(pid, set()).add(atype)
+
+    def calc_achievement_count(row):
+        uid, name, level, discord_id, ts_id, total_time, longest_streak, total_logins, active_slots, active_days = row
+        longest_streak = longest_streak or 0
+        total_logins = total_logins or 0
+        active_slots = active_slots or 0
+        active_days = active_days or 0
+        total_hours = total_time / 60
+
+        count = 0
+        # Streak (4 levels)
+        for threshold in [2, 7, 14, 30]:
+            if longest_streak >= threshold: count += 1
+        # Logins (4 levels)
+        for threshold in [2, 30, 365, 3650]:
+            if total_logins >= threshold: count += 1
+        # Time (4 levels)
+        for threshold in [1, 10, 100, 1000]:
+            if total_hours >= threshold: count += 1
+        # Heatmap (4 levels): 3 days, 5 days, 7 days, all 28 slots
+        if active_days >= 3: count += 1
+        if active_days >= 5: count += 1
+        if active_days >= 7: count += 1
+        if active_slots >= 28: count += 1
+        # Special achievements from sa_map
+        user_sa = set()
+        if discord_id: user_sa |= sa_map.get(str(discord_id), set())
+        if ts_id: user_sa |= sa_map.get(str(ts_id), set())
+        # Division (count levels reached)
+        for d in range(101, 107):
+            if d in user_sa: count += 1
+        if 1 in user_sa: count += 1   # old member
+        if 2 in user_sa: count += 1   # legacy supporter
+        if 200 in user_sa: count += 1 # apex
+        return {'id': uid, 'name': name, 'level': level, 'value': count}
+
+    scored = [calc_achievement_count(r) for r in ach_rows]
+    scored.sort(key=lambda x: x['value'], reverse=True)
+    most_achievements = scored[:3]
 
     most_active_times = query_top3("""
         SELECT u.id, COALESCE(u.name,'Unknown'), u.level,
