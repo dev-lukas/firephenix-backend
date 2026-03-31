@@ -24,16 +24,28 @@ async def _fetch_free_models():
                 if resp.status == 200:
                     data = await resp.json()
                     free_ids = []
+                    # Non-chat architectures to exclude (image, audio, music, embedding, etc.)
+                    _EXCLUDED_PREFIXES = ("google/lyria", "google/imagen", "google/veo")
+                    _CHAT_ARCHITECTURES = {"transformer", "moe", "ssm", None}
                     for m in data.get("data", []):
                         model_id = m.get("id", "")
                         pricing = m.get("pricing", {})
+                        arch = m.get("architecture", {})
+                        modality = arch.get("modality", "")
                         # A model is free when both prompt and completion cost 0
-                        if (
+                        if not (
                             pricing
                             and str(pricing.get("prompt", "1")) == "0"
                             and str(pricing.get("completion", "1")) == "0"
                         ):
-                            free_ids.append(model_id)
+                            continue
+                        # Must produce text output (not image/audio)
+                        if modality and "text" not in modality.split("->")[-1]:
+                            continue
+                        # Skip known non-chat model families
+                        if any(model_id.startswith(p) for p in _EXCLUDED_PREFIXES):
+                            continue
+                        free_ids.append(model_id)
                     return free_ids
     except Exception as e:
         logging.warning(f"Failed to fetch OpenRouter model list: {e}")
@@ -70,7 +82,7 @@ async def get_models():
 
         if matched:
             primary = matched[0]
-            fallbacks = matched[1:]
+            fallbacks = matched[1:2]  # OpenRouter allows max 3 models total
         else:
             # None of our preferred models exist — pick from available free models,
             # preferring well-known providers.
@@ -83,11 +95,11 @@ async def get_models():
                 ),
             )
             primary = sorted_free[0]
-            fallbacks = sorted_free[1:5]  # keep fallback list reasonable
+            fallbacks = sorted_free[1:3]  # OpenRouter allows max 3 models total
     else:
         # API unreachable — fall back to the preferred list and hope for the best
         primary = Config.OPENROUTER_PREFERRED_FREE_MODELS[0]
-        fallbacks = Config.OPENROUTER_PREFERRED_FREE_MODELS[1:]
+        fallbacks = Config.OPENROUTER_PREFERRED_FREE_MODELS[1:3]
 
     _model_cache["models"] = (primary, fallbacks)
     _model_cache["fetched_at"] = now
