@@ -23,15 +23,19 @@ async def _fetch_free_models():
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    free_ids = []
-                    # Non-chat architectures to exclude (image, audio, music, embedding, etc.)
-                    _EXCLUDED_PREFIXES = ("google/lyria", "google/imagen", "google/veo")
-                    _CHAT_ARCHITECTURES = {"transformer", "moe", "ssm", None}
+                    free_models = []
+                    # Non-chat model families to exclude
+                    _EXCLUDED_PREFIXES = (
+                        "google/lyria", "google/imagen", "google/veo",
+                        "google/gemma",  # too small for complex system prompts
+                    )
+                    _MIN_CONTEXT_LENGTH = 8000  # skip tiny models
                     for m in data.get("data", []):
                         model_id = m.get("id", "")
                         pricing = m.get("pricing", {})
                         arch = m.get("architecture", {})
                         modality = arch.get("modality", "")
+                        context_length = m.get("context_length", 0) or 0
                         # A model is free when both prompt and completion cost 0
                         if not (
                             pricing
@@ -42,11 +46,14 @@ async def _fetch_free_models():
                         # Must produce text output (not image/audio)
                         if modality and "text" not in modality.split("->")[-1]:
                             continue
-                        # Skip known non-chat model families
+                        # Skip known non-chat / low-quality model families
                         if any(model_id.startswith(p) for p in _EXCLUDED_PREFIXES):
                             continue
-                        free_ids.append(model_id)
-                    return free_ids
+                        # Skip very small models
+                        if context_length < _MIN_CONTEXT_LENGTH:
+                            continue
+                        free_models.append((model_id, context_length))
+                    return free_models
     except Exception as e:
         logging.warning(f"Failed to fetch OpenRouter model list: {e}")
     return []
@@ -69,21 +76,24 @@ async def get_models():
         primary, fallbacks = _model_cache["models"]
         return primary, fallbacks
 
-    available_free = await _fetch_free_models()
+    free_models = await _fetch_free_models()
 
-    if available_free:
-        # Sort by preferred provider order; unknown providers go last
+    if free_models:
+        # Sort by: 1) preferred provider order, 2) largest context length first
         providers = Config.OPENROUTER_PREFERRED_PROVIDERS
-        def _provider_rank(model_id):
+        def _sort_key(item):
+            model_id, ctx_len = item
             provider = model_id.split("/")[0] if "/" in model_id else model_id
             try:
-                return providers.index(provider)
+                provider_rank = providers.index(provider)
             except ValueError:
-                return len(providers)
+                provider_rank = len(providers)
+            return (provider_rank, -ctx_len)  # negative so largest context sorts first
 
-        ranked = sorted(available_free, key=_provider_rank)
-        primary = ranked[0]
-        fallbacks = ranked[1:3]  # OpenRouter allows max 3 models total
+        ranked = sorted(free_models, key=_sort_key)
+        ranked_ids = [model_id for model_id, _ in ranked]
+        primary = ranked_ids[0]
+        fallbacks = ranked_ids[1:3]  # OpenRouter allows max 3 models total
     else:
         # API unreachable — hardcoded last-resort
         primary = "google/gemini-2.0-flash-exp:free"
@@ -221,35 +231,32 @@ async def handle_chat_message(message):
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    logging.debug(f"OpenRouter response: {data}")
+                data = await resp.json()
+                logging.info(f"OpenRouter response (status={resp.status}, model={data.get('model', '?')})")
 
-                    content = data.get("choices", [{}])[0].get("message", {}).get("content")
-                    if not content:
-                        return None
-
-                    # Discord message limit is 2000 chars
-                    if len(content) > 1900:
-                        content = content[:1900] + "..."
-
-                    return content
-                else:
-                    body = await resp.text()
-                    logging.error(f"OpenRouter API error {resp.status}: {body}")
-
-                    # If we get a model-not-found error, invalidate cache so next
-                    # request fetches fresh model list
-                    if resp.status in (404, 422):
+                if resp.status != 200 or "error" in data:
+                    logging.error(f"OpenRouter error (status={resp.status}): {data}")
+                    # Invalidate model cache on model-related errors
+                    if resp.status in (400, 404, 422):
                         _model_cache["fetched_at"] = 0
+                    return None
 
-                    return "Tut mir Leid, Ember hat leider ihr Mana verbraucht und schlaeft gerade."
+                content = data.get("choices", [{}])[0].get("message", {}).get("content")
+                if not content:
+                    logging.warning(f"OpenRouter returned empty content: {data}")
+                    return None
+
+                # Discord message limit is 2000 chars
+                if len(content) > 1900:
+                    content = content[:1900] + "..."
+
+                return content
     except asyncio.TimeoutError:
         logging.error("OpenRouter request timed out")
-        return "Tut mir Leid, Ember braucht gerade etwas laenger. Versuch es gleich nochmal!"
+        return None
     except Exception as e:
         logging.error(f"Error in handle_chat_message: {e}")
-        return "Scheint so, als waere Ember gerade nicht da, versuch es doch spaeter erneut!"
+        return None
 
 
 def format_minutes(minutes):
