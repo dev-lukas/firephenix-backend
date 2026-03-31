@@ -49,9 +49,19 @@ class Config:
     # Lock Socket - needed for Cross-Platform Locking
     PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_runner.pid")
     # OpenRouter
-    OPENROUTER_MODEL = "google/gemini-2.0-flash-exp:free"
-    OPENROUTER_ALTERNATE_MODELS = ['meta-llama/llama-3.3-8b-instruct:free', 'meta-llama/llama-3.2-3b-instruct:free'] 
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    # Preferred free models in priority order. If none are available,
+    # we dynamically fetch the current free model list from OpenRouter.
+    OPENROUTER_PREFERRED_FREE_MODELS = [
+        "google/gemini-2.5-flash-preview:free",
+        "google/gemini-2.0-flash-exp:free",
+        "meta-llama/llama-4-scout:free",
+        "meta-llama/llama-4-maverick:free",
+        "deepseek/deepseek-chat-v3-0324:free",
+        "qwen/qwen3-235b-a22b:free",
+    ]
+    # Cache TTL for the free model list (seconds)
+    OPENROUTER_MODEL_CACHE_TTL = 3600
     # VPNApi.io
     VPNAPI_API_KEY = os.getenv("VPNAPI_API_KEY")
     # Rankingsystem
