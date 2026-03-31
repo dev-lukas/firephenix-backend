@@ -56,11 +56,8 @@ async def get_models():
     """
     Return (primary_model, fallback_list) to use for the next request.
 
-    Strategy:
-    1. Check which of our preferred models are still available on OpenRouter.
-    2. If at least one preferred model is available, use it as primary + the rest as fallbacks.
-    3. If none are available, pick the best free models from the live list.
-    4. Cache the result so we don't call /models on every message.
+    Sorts all available free models by preferred provider order, picks the
+    top 3 (OpenRouter's max). Results are cached for OPENROUTER_MODEL_CACHE_TTL.
     """
     now = time.time()
 
@@ -75,31 +72,22 @@ async def get_models():
     available_free = await _fetch_free_models()
 
     if available_free:
-        available_set = set(available_free)
+        # Sort by preferred provider order; unknown providers go last
+        providers = Config.OPENROUTER_PREFERRED_PROVIDERS
+        def _provider_rank(model_id):
+            provider = model_id.split("/")[0] if "/" in model_id else model_id
+            try:
+                return providers.index(provider)
+            except ValueError:
+                return len(providers)
 
-        # Filter preferred list to only currently available models
-        matched = [m for m in Config.OPENROUTER_PREFERRED_FREE_MODELS if m in available_set]
-
-        if matched:
-            primary = matched[0]
-            fallbacks = matched[1:2]  # OpenRouter allows max 3 models total
-        else:
-            # None of our preferred models exist — pick from available free models,
-            # preferring well-known providers.
-            provider_priority = ["google/", "meta-llama/", "deepseek/", "qwen/", "mistralai/"]
-            sorted_free = sorted(
-                available_free,
-                key=lambda mid: next(
-                    (i for i, p in enumerate(provider_priority) if mid.startswith(p)),
-                    len(provider_priority),
-                ),
-            )
-            primary = sorted_free[0]
-            fallbacks = sorted_free[1:3]  # OpenRouter allows max 3 models total
+        ranked = sorted(available_free, key=_provider_rank)
+        primary = ranked[0]
+        fallbacks = ranked[1:3]  # OpenRouter allows max 3 models total
     else:
-        # API unreachable — fall back to the preferred list and hope for the best
-        primary = Config.OPENROUTER_PREFERRED_FREE_MODELS[0]
-        fallbacks = Config.OPENROUTER_PREFERRED_FREE_MODELS[1:3]
+        # API unreachable — hardcoded last-resort
+        primary = "google/gemini-2.0-flash-exp:free"
+        fallbacks = []
 
     _model_cache["models"] = (primary, fallbacks)
     _model_cache["fetched_at"] = now
@@ -168,10 +156,7 @@ async def handle_chat_message(message):
     Collect recent conversation context and query OpenRouter for a reply.
     """
     try:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "system", "content": await fetch_user_info_string(message.author.id)},
-        ]
+        user_info = await fetch_user_info_string(message.author.id)
 
         # --- Conversation history (sliding window) ---
         history = []
@@ -179,20 +164,35 @@ async def handle_chat_message(message):
             history.append(msg)
         history.reverse()  # oldest first
 
-        # Keep last 8 turns of conversation for richer context
         bot_id = message.guild.me.id if message.guild else None
-        turns = []
+        prior_turns = []
         for msg in history:
             if msg.author.id == message.author.id:
-                turns.append({"role": "user", "content": msg.content})
+                prior_turns.append({"role": "user", "content": msg.content})
             elif msg.author.bot and msg.author.id == bot_id:
-                turns.append({"role": "assistant", "content": msg.content})
-        # Keep at most 8 recent turns
-        for turn in turns[-8:]:
-            messages.append(turn)
+                prior_turns.append({"role": "assistant", "content": msg.content})
+        prior_turns = prior_turns[-8:]
 
-        # Current message
-        messages.append({"role": "user", "content": message.content})
+        # Inject system prompt into the first user message instead of using
+        # the "system" role — many free models (e.g. Gemma) don't support it.
+        context_block = f"[Anweisungen]\n{SYSTEM_PROMPT}\n\n{user_info}\n\n[Nachricht]\n"
+
+        messages = []
+        if prior_turns:
+            # Ensure conversation starts with a user message (required by most APIs)
+            if prior_turns[0]["role"] == "user":
+                messages.append({"role": "user", "content": context_block + prior_turns[0]["content"]})
+                messages.extend(prior_turns[1:])
+            else:
+                messages.append({"role": "user", "content": context_block.rstrip()})
+                messages.extend(prior_turns)
+            # Avoid consecutive same-role messages: merge if last turn was also user
+            if messages[-1]["role"] == "user":
+                messages[-1]["content"] += "\n" + message.content
+            else:
+                messages.append({"role": "user", "content": message.content})
+        else:
+            messages.append({"role": "user", "content": context_block + message.content})
 
         # --- Model selection ---
         primary_model, fallback_models = await get_models()
