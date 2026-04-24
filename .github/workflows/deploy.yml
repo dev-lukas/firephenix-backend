@@ -1,24 +1,42 @@
-name: Deploy to VPS
+name: Build & Deploy Backend
 
 on:
   push:
     branches: [main]
 
+env:
+  REGISTRY: registry.lukas-roth.dev
+  IMAGE_NAME: firephenix-backend
+
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  build-and-deploy:
+    runs-on: self-hosted
+
     steps:
-      - name: SSH and deploy
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t $REGISTRY/$IMAGE_NAME:latest \
+            -t $REGISTRY/$IMAGE_NAME:${{ github.sha }} .
+
+      - name: Push to registry
+        run: |
+          docker push $REGISTRY/$IMAGE_NAME:latest
+          docker push $REGISTRY/$IMAGE_NAME:${{ github.sha }}
+
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /home/deploy/firephenix-backend
-            git pull
-            source venv/bin/activate
-            pip install -r requirements.txt
-            sudo systemctl daemon-reload
-            sudo systemctl restart firephenix-flask
-            sudo systemctl restart firephenix-bot
+            cd /opt/firephenix
+            docker compose pull backend bot
+            docker compose up -d backend bot
+
+      - name: Cleanup
+        if: always()
+        run: docker image prune -f
