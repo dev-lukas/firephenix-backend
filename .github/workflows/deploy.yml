@@ -1,19 +1,34 @@
-name: Build & Deploy Backend
+name: Build Backend
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to production after pushing the image
+        required: false
+        type: boolean
+        default: false
 
 env:
   REGISTRY: registry.lukas-roth.dev
+  REGISTRY_USERNAME: registry
   IMAGE_NAME: firephenix-backend
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Login to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Build Docker image
         run: |
@@ -27,6 +42,7 @@ jobs:
           docker push $REGISTRY/$IMAGE_NAME:${{ github.sha }}
 
       - name: Deploy to VPS
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
