@@ -1,7 +1,9 @@
-name: Build Backend
+name: FirePhenix Backend CI/CD
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -11,48 +13,26 @@ on:
         type: boolean
         default: false
 
-env:
-  REGISTRY: registry.lukas-roth.dev
-  REGISTRY_USERNAME: registry
-  IMAGE_NAME: firephenix-backend
+permissions:
+  contents: read
 
 jobs:
-  build-and-push:
-    runs-on: self-hosted
+  backend:
+    uses: dev-lukas/ci-cd-actions/.github/workflows/python-service.yml@main
+    with:
+      image_name: firephenix-backend
+      python_version: "3.12"
+      container_port: "5000"
+      smoke_path: /api/auth/check
+      deploy: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
+      deploy_services: "backend bot"
+    secrets: inherit
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-
-      - name: Build Docker image
-        run: |
-          docker build \
-            -t $REGISTRY/$IMAGE_NAME:latest \
-            -t $REGISTRY/$IMAGE_NAME:${{ github.sha }} .
-
-      - name: Push to registry
-        run: |
-          docker push $REGISTRY/$IMAGE_NAME:latest
-          docker push $REGISTRY/$IMAGE_NAME:${{ github.sha }}
-
-      - name: Deploy to VPS
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd /opt/firephenix
-            docker compose pull backend bot
-            docker compose up -d backend bot
-
-      - name: Cleanup
-        if: always()
-        run: docker image prune -f
+  integration:
+    needs: backend
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    uses: dev-lukas/ci-cd-actions/.github/workflows/firephenix-stack.yml@main
+    with:
+      component: backend
+      image_name: firephenix-backend
+    secrets: inherit
