@@ -46,8 +46,11 @@ class Config:
     VALKEY_UPDATE_INTERVAL = 2
     # Limiter
     LIMITER_STORAGE_URI=f"redis://{VALKEY_HOST}:{VALKEY_PORT}"
-    # Lock Socket - needed for Cross-Platform Locking
-    PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_runner.pid")
+    # Bot process management
+    PID_FILE = os.getenv(
+        "BOT_RUNNER_PID_FILE",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_runner.pid"),
+    )
     # OpenRouter
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     # Preferred providers in priority order — the best available free model

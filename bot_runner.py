@@ -23,9 +23,7 @@ class BotRunner:
     def run(self):
         """Main runner function"""
         logging.info("Starting bot runner...")
-        with open(Config.PID_FILE, 'w') as f:
-            f.write(str(os.getpid()))
-        logging.debug(f"PID {os.getpid()} written to {Config.PID_FILE}")
+        write_pid_file(os.getpid())
 
         signal.signal(signal.SIGINT, self.shutdown)
         signal.signal(signal.SIGTERM, self.shutdown)
@@ -71,6 +69,21 @@ def remove_pid_file():
     except Exception as e:
         logging.error(f"Failed to remove PID file: {e}")
 
+def write_pid_file(pid):
+    """Write the bot PID for legacy start/stop/status commands."""
+    try:
+        pid_dir = os.path.dirname(Config.PID_FILE)
+        if pid_dir:
+            os.makedirs(pid_dir, exist_ok=True)
+
+        with open(Config.PID_FILE, 'w') as f:
+            f.write(str(pid))
+        logging.debug(f"PID {pid} written to {Config.PID_FILE}")
+        return True
+    except OSError as e:
+        logging.warning(f"Failed to write PID file {Config.PID_FILE}: {e}")
+        return False
+
 def start_bot():
     """Start the bot if it's not already running"""
     # Check if running under systemd (environment variable set by systemd)
@@ -99,8 +112,7 @@ def start_bot():
                 stdin=subprocess.PIPE
             )
             
-            with open(Config.PID_FILE, 'w') as f:
-                f.write(str(process.pid))
+            write_pid_file(process.pid)
                 
             time.sleep(2)
             
