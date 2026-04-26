@@ -23,9 +23,9 @@ jobs:
       image_name: firephenix-backend
       python_version: "3.12"
       container_port: "5000"
-      smoke_path: /api/auth/check
-      deploy: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
-      deploy_services: "backend bot"
+      container_test_command: python3 -m unittest discover -s tests
+      smoke_paths: |
+        /api/auth/check
     secrets: inherit
 
   integration:
@@ -35,4 +35,12 @@ jobs:
     with:
       component: backend
       image_name: firephenix-backend
+    secrets: inherit
+
+  deploy:
+    needs: integration
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
+    uses: dev-lukas/ci-cd-actions/.github/workflows/deploy-service.yml@main
+    with:
+      deploy_services: "backend bot"
     secrets: inherit

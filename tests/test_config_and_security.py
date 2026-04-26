@@ -1,0 +1,68 @@
+import re
+import unittest
+from unittest.mock import patch
+
+from flask import Flask, jsonify
+
+from app.config import Config
+from app.utils.security import generate_verification_code, login_required
+
+
+class ConfigThresholdTests(unittest.TestCase):
+    def test_level_lookup_uses_highest_reached_threshold(self):
+        self.assertEqual(Config.get_level_for_minutes(0), 1)
+        self.assertEqual(Config.get_level_for_minutes(599), 2)
+        self.assertEqual(Config.get_level_for_minutes(600), 3)
+        self.assertEqual(Config.get_level_for_minutes(1_800_000), 25)
+
+    def test_division_lookup_uses_highest_reached_threshold(self):
+        self.assertEqual(Config.get_division_for_minutes(0), 1)
+        self.assertEqual(Config.get_division_for_minutes(2_999), 1)
+        self.assertEqual(Config.get_division_for_minutes(3_000), 2)
+        self.assertEqual(Config.get_division_for_minutes(24_000), 5)
+
+
+class SecurityHelperTests(unittest.TestCase):
+    def test_verification_code_is_six_digits(self):
+        with patch('app.utils.security.random.randint', side_effect=[1, 2, 3, 4, 5, 6]):
+            code = generate_verification_code()
+
+        self.assertEqual(code, '123456')
+        self.assertRegex(code, re.compile(r'^\d{6}$'))
+
+    def test_login_required_rejects_missing_steam_session(self):
+        app = Flask(__name__)
+        app.secret_key = 'test-secret'
+
+        @app.route('/protected')
+        @login_required
+        def protected():
+            return jsonify({'ok': True})
+
+        with app.test_client() as client:
+            response = client.get('/protected')
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {'error': 'Unauthorized'})
+
+    def test_login_required_allows_authenticated_session(self):
+        app = Flask(__name__)
+        app.secret_key = 'test-secret'
+
+        @app.route('/protected')
+        @login_required
+        def protected():
+            return jsonify({'ok': True})
+
+        with app.test_client() as client:
+            with client.session_transaction() as session:
+                session['steam_id'] = '76561198000000000'
+
+            response = client.get('/protected')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {'ok': True})
+
+
+if __name__ == '__main__':
+    unittest.main()
