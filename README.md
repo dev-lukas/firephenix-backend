@@ -20,6 +20,8 @@ DISCORD_TOKEN= # Your Discord bot API token
 TS3_PASSWORD= # Your TeamSpeak 3 query password
 DB_PASSWORD= # Your MariaDB password
 SECRET_KEY= # Your randomized cookie secret key
+CORS_ORIGINS=https://firephenix.de # Comma-separated allowed browser origins
+LIMITER_STORAGE_URI=valkey://localhost:6379 # Use memory:// only for local tests
 ```
 
 ## Configuration
@@ -35,3 +37,4 @@ Run the Website API with
 
 For production, use tools like [Gunicorn](https://gunicorn.org/) to serve the app.
 
+Authenticated write requests must include the `X-CSRF-Token` header. The token is returned by `/api/auth/check` after a successful Steam login.

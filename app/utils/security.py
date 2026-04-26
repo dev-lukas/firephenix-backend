@@ -1,8 +1,8 @@
-from flask import session, jsonify
-from flask_limiter import  Limiter
-from  flask_limiter.util import get_remote_address
+from flask import request, session, jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from app.config import Config
-import random
+import secrets
 from functools import wraps
 
 from app.utils.logger import RankingLogger
@@ -25,6 +25,23 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def generate_csrf_token() -> str:
+    token = secrets.token_urlsafe(32)
+    session['csrf_token'] = token
+    return token
+
+def csrf_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        expected_token = session.get('csrf_token')
+        provided_token = request.headers.get('X-CSRF-Token')
+        if not expected_token or not provided_token:
+            return jsonify({'error': 'CSRF token missing'}), 403
+        if not secrets.compare_digest(expected_token, provided_token):
+            return jsonify({'error': 'CSRF token invalid'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
 def handle_errors(f):
     """
     Decorator to handle exceptions in routes and return appropriate error responses.
@@ -41,4 +58,4 @@ def handle_errors(f):
 
 def generate_verification_code():
     """Generate a random 6-digit verification code"""
-    return ''.join([str(random.randint(0, 9)) for _ in range(6)])
+    return f"{secrets.randbelow(1_000_000):06d}"

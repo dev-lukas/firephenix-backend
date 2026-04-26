@@ -1,11 +1,10 @@
 import re
 import unittest
-from unittest.mock import patch
 
 from flask import Flask, jsonify
 
 from app.config import Config
-from app.utils.security import generate_verification_code, login_required
+from app.utils.security import csrf_required, generate_verification_code, login_required
 
 
 class ConfigThresholdTests(unittest.TestCase):
@@ -24,10 +23,8 @@ class ConfigThresholdTests(unittest.TestCase):
 
 class SecurityHelperTests(unittest.TestCase):
     def test_verification_code_is_six_digits(self):
-        with patch('app.utils.security.random.randint', side_effect=[1, 2, 3, 4, 5, 6]):
-            code = generate_verification_code()
+        code = generate_verification_code()
 
-        self.assertEqual(code, '123456')
         self.assertRegex(code, re.compile(r'^\d{6}$'))
 
     def test_login_required_rejects_missing_steam_session(self):
@@ -59,6 +56,60 @@ class SecurityHelperTests(unittest.TestCase):
                 session['steam_id'] = '76561198000000000'
 
             response = client.get('/protected')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {'ok': True})
+
+    def test_csrf_required_rejects_missing_token(self):
+        app = Flask(__name__)
+        app.secret_key = 'test-secret'
+
+        @app.route('/protected', methods=['POST'])
+        @csrf_required
+        def protected():
+            return jsonify({'ok': True})
+
+        with app.test_client() as client:
+            with client.session_transaction() as session:
+                session['csrf_token'] = 'known-token'
+
+            response = client.post('/protected')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), {'error': 'CSRF token missing'})
+
+    def test_csrf_required_rejects_invalid_token(self):
+        app = Flask(__name__)
+        app.secret_key = 'test-secret'
+
+        @app.route('/protected', methods=['POST'])
+        @csrf_required
+        def protected():
+            return jsonify({'ok': True})
+
+        with app.test_client() as client:
+            with client.session_transaction() as session:
+                session['csrf_token'] = 'known-token'
+
+            response = client.post('/protected', headers={'X-CSRF-Token': 'bad-token'})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), {'error': 'CSRF token invalid'})
+
+    def test_csrf_required_allows_valid_token(self):
+        app = Flask(__name__)
+        app.secret_key = 'test-secret'
+
+        @app.route('/protected', methods=['POST'])
+        @csrf_required
+        def protected():
+            return jsonify({'ok': True})
+
+        with app.test_client() as client:
+            with client.session_transaction() as session:
+                session['csrf_token'] = 'known-token'
+
+            response = client.post('/protected', headers={'X-CSRF-Token': 'known-token'})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {'ok': True})

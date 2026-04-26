@@ -11,6 +11,11 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY')
     STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login'
     SITE_URL = os.getenv("SITE_URL", "https://firephenix.de")
+    CORS_ORIGINS = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", SITE_URL).split(",")
+        if origin.strip()
+    ]
     # Discord
     DISCORD_TOKEN=os.getenv("DISCORD_TOKEN")
     DISCORD_EXCLUDED_ROLE_ID="12312312312"
@@ -45,7 +50,7 @@ class Config:
     VALKEY_DB = 0
     VALKEY_UPDATE_INTERVAL = 2
     # Limiter
-    LIMITER_STORAGE_URI=f"redis://{VALKEY_HOST}:{VALKEY_PORT}"
+    LIMITER_STORAGE_URI=os.getenv("LIMITER_STORAGE_URI", f"valkey://{VALKEY_HOST}:{VALKEY_PORT}")
     # Bot process management
     PID_FILE = os.getenv(
         "BOT_RUNNER_PID_FILE",

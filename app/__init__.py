@@ -3,6 +3,7 @@ from flask_cors import CORS
 from datetime import  timedelta
 from app.config import Config
 from app.utils.logger import RankingLogger
+from app.utils.security import limiter
 
 from app.api.auth.routes import auth_bp
 from app.api.ranking.routes import ranking_bp
@@ -28,6 +29,9 @@ def create_app():
 
     app = Flask(__name__)
 
+    if not Config.SECRET_KEY:
+        raise RuntimeError("SECRET_KEY must be configured")
+
     app.config.update(
         SECRET_KEY=Config.SECRET_KEY,
         SESSION_COOKIE_SECURE=Config.SITE_URL.startswith('https'),
@@ -40,13 +44,14 @@ def create_app():
         app, 
         resources={
             r"/api/*": {
-                "origins": "*",
+                "origins": Config.CORS_ORIGINS,
                 "methods": ['GET', 'POST', "PUT", "DELETE"],
-                "allow_headers": ['Content-Type', 'Authorization']
+                "allow_headers": ['Content-Type', 'Authorization', 'X-CSRF-Token']
             }
         }, 
         supports_credentials=True
     )
+    limiter.init_app(app)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(user_online_bp)

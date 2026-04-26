@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
-from app.utils.security import limiter, login_required, handle_errors
+from app.utils.security import csrf_required, limiter, login_required, handle_errors
 from app.utils.valkey_manager import ValkeyManager
 
 user_profile_skins_bp = Blueprint('/api/user/profile/skins', __name__)
@@ -9,11 +9,13 @@ valkey_manager = ValkeyManager()
 
 @user_profile_skins_bp.route('/api/user/profile/skins', methods=['POST'])
 @login_required
+@csrf_required
 @handle_errors
 @limiter.limit("1 per minute")
 def set_skin():
-    platform = request.json.get('platform')
-    tier = request.json.get('tier')
+    payload = request.get_json(silent=True) or {}
+    platform = payload.get('platform')
+    tier = payload.get('tier')
     steam_id = session.get('steam_id')
     
     if not all([platform, steam_id, tier]):
