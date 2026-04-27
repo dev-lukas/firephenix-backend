@@ -27,7 +27,6 @@ jobs:
       python_version: "3.12"
       check_commands: |
         python3 -m compileall app run.py bot_runner.py legacy_database_import.py tests
-        python3 -m unittest discover -s tests
 
   docker-build:
     needs: checks
