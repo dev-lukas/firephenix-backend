@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
-from app.utils.security import limiter, login_required, handle_errors
+from app.utils.security import csrf_required, limiter, login_required, handle_errors
 from app.utils.valkey_manager import ValkeyManager
 
 user_profile_moveshield_bp = Blueprint('/api/user/profile/moveshield/', __name__)
@@ -9,10 +9,12 @@ valkey_manager = ValkeyManager()
 
 @user_profile_moveshield_bp.route('/api/user/profile/moveshield', methods=['POST'])
 @login_required
+@csrf_required
 @handle_errors
 @limiter.limit("1 per minute")
 def set_move_shield():
-    platform = request.json.get('platform')
+    payload = request.get_json(silent=True) or {}
+    platform = payload.get('platform')
     steam_id = session.get('steam_id')
     
     if not all([platform, steam_id]):
@@ -62,10 +64,12 @@ def set_move_shield():
 
 @user_profile_moveshield_bp.route('/api/user/profile/moveshield', methods=['DELETE'])
 @login_required
+@csrf_required
 @handle_errors
 @limiter.limit("1 per minute")
 def remove_move_shield():
-    platform = request.json.get('platform')
+    payload = request.get_json(silent=True) or {}
+    platform = payload.get('platform')
     steam_id = session.get('steam_id')
     
     if not all([platform, steam_id]):

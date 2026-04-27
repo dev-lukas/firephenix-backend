@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
 from app.utils.valkey_manager import ValkeyManager
-from app.utils.security import limiter, login_required, handle_errors
+from app.utils.security import csrf_required, limiter, login_required, handle_errors
 
 valkey_manager = ValkeyManager()
 
@@ -9,10 +9,12 @@ user_profile_channel_bp = Blueprint('/api/user/profile/channel', __name__)
 
 @user_profile_channel_bp.route('/api/user/profile/channel', methods=['POST'])
 @login_required
+@csrf_required
 @handle_errors
 @limiter.limit("3 per 10 minutes")
 def create_channel():
-    platform = request.json.get('platform')
+    payload = request.get_json(silent=True) or {}
+    platform = payload.get('platform')
     steam_id = session.get('steam_id')
     
     if not all([platform, steam_id]):
