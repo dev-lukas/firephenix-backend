@@ -7,40 +7,78 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      deploy:
-        description: Deploy to production after pushing the image
-        required: false
-        type: boolean
-        default: false
+      deploy_services:
+        description: Space, comma, or newline-separated services to deploy
+        required: true
+        type: string
+        default: backend bot
 
 permissions:
   contents: read
 
+env:
+  REGISTRY: registry.lukas-roth.dev
+  IMAGE_NAME: firephenix-backend
+
 jobs:
-  backend:
-    uses: dev-lukas/ci-cd-actions/.github/workflows/python-service.yml@main
+  checks:
+    uses: dev-lukas/ci-cd-actions/.github/workflows/python-checks.yml@main
     with:
-      image_name: firephenix-backend
       python_version: "3.12"
-      container_port: "5000"
-      container_test_command: python3 -m unittest discover -s tests
-      smoke_paths: |
-        /api/auth/check
-    secrets: inherit
+      check_commands: |
+        python3 -m compileall app run.py bot_runner.py legacy_database_import.py tests
+        python3 -m unittest discover -s tests
+
+  docker-build:
+    needs: checks
+    uses: dev-lukas/ci-cd-actions/.github/workflows/docker-build.yml@main
+    with:
+      image: local/firephenix-backend:${{ github.sha }}
+      image_tags: |
+        registry.lukas-roth.dev/firephenix-backend:${{ github.sha }}
+        registry.lukas-roth.dev/firephenix-backend:latest
+      container_test_command: |
+        docker run --rm \
+          -e SECRET_KEY=ci-secret \
+          -e SITE_URL=http://localhost \
+          -e LIMITER_STORAGE_URI=memory:// \
+          "$IMAGE_UNDER_TEST" \
+          python3 -m unittest discover -s tests
+      smoke_command: .github/ci/backend-standalone-smoke.sh
 
   integration:
-    needs: backend
+    needs: docker-build
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-    uses: dev-lukas/ci-cd-actions/.github/workflows/firephenix-stack.yml@main
+    uses: dev-lukas/ci-cd-actions/.github/workflows/docker-build.yml@main
     with:
-      component: backend
-      image_name: firephenix-backend
+      image: local/firephenix-backend:${{ github.sha }}
+      image_tags: |
+        registry.lukas-roth.dev/firephenix-backend:${{ github.sha }}
+        registry.lukas-roth.dev/firephenix-backend:latest
+      registry: registry.lukas-roth.dev
+      registry_username: registry
+      smoke_command: .github/ci/firephenix-stack-smoke.sh
+    secrets: inherit
+
+  publish:
+    needs: integration
+    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+    uses: dev-lukas/ci-cd-actions/.github/workflows/docker-publish.yml@main
+    with:
+      registry: registry.lukas-roth.dev
+      registry_username: registry
+      image_tags: |
+        registry.lukas-roth.dev/firephenix-backend:${{ github.sha }}
+        registry.lukas-roth.dev/firephenix-backend:latest
     secrets: inherit
 
   deploy:
-    needs: integration
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
-    uses: dev-lukas/ci-cd-actions/.github/workflows/deploy-service.yml@main
+    needs: publish
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    uses: dev-lukas/ci-cd-actions/.github/workflows/compose-deploy.yml@main
     with:
-      deploy_services: "backend bot"
+      deploy_services: ${{ inputs.deploy_services }}
+      allowed_services: backend bot
+      deploy_path: /opt/firephenix
+      environment: production
     secrets: inherit
