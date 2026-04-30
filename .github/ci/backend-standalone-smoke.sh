@@ -18,9 +18,11 @@ port="$(docker inspect --format '{{ (index (index .NetworkSettings.Ports "5000/t
 response_file="$(mktemp)"
 error_file="$(mktemp)"
 
+echo "Waiting for backend endpoint /api/auth/check..."
 for _ in $(seq 1 45); do
   if curl -fsS "http://127.0.0.1:${port}/api/auth/check" -o "$response_file" 2>"$error_file"; then
     if grep -Fq '"authenticated":false' "$response_file"; then
+      echo "Backend endpoint /api/auth/check is ready."
       exit 0
     fi
   fi

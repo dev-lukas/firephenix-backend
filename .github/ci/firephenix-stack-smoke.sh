@@ -113,9 +113,11 @@ edge_port="$(docker compose -f "$workdir/docker-compose.ci.yml" port edge 80 | a
 
 for path in /api/auth/check /api/ranking/stats /api/ranking/top "/api/user/online?platform=discord"; do
   response_file="$(mktemp)"
+  error_file="$(mktemp)"
   ok=0
+  echo "Waiting for backend endpoint ${path}..."
   for _ in $(seq 1 60); do
-    if curl -fsS "http://127.0.0.1:${backend_port}${path}" -o "$response_file"; then
+    if curl -fsS "http://127.0.0.1:${backend_port}${path}" -o "$response_file" 2>"$error_file"; then
       if [ "$path" = "/api/auth/check" ] && ! grep -Fq '"authenticated":false' "$response_file"; then
         sleep 1
         continue
@@ -128,16 +130,20 @@ for path in /api/auth/check /api/ranking/stats /api/ranking/top "/api/user/onlin
 
   if [ "$ok" -ne 1 ]; then
     echo "Backend integration smoke failed for ${path}" >&2
+    cat "$error_file" >&2 || true
     cat "$response_file" >&2 || true
     exit 1
   fi
+  echo "Backend endpoint ${path} is ready."
 done
 
 for path in / /ranking /wiki /profile; do
   response_file="$(mktemp)"
+  error_file="$(mktemp)"
   ok=0
+  echo "Waiting for website route ${path}..."
   for _ in $(seq 1 30); do
-    if curl -fsS "http://127.0.0.1:${edge_port}${path}" -o "$response_file" &&
+    if curl -fsS "http://127.0.0.1:${edge_port}${path}" -o "$response_file" 2>"$error_file" &&
       grep -Fq '<div id="app">' "$response_file"; then
       ok=1
       break
@@ -147,7 +153,9 @@ for path in / /ranking /wiki /profile; do
 
   if [ "$ok" -ne 1 ]; then
     echo "Website integration smoke failed for ${path}" >&2
+    cat "$error_file" >&2 || true
     cat "$response_file" >&2 || true
     exit 1
   fi
+  echo "Website route ${path} is ready."
 done

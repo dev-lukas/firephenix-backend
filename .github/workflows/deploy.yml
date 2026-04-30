@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      deploy_production:
+        description: Deploy selected services to production after CI/CD completes
+        required: true
+        type: boolean
+        default: false
       deploy_services:
         description: Space, comma, or newline-separated services to deploy
         required: true
@@ -73,7 +78,7 @@ jobs:
 
   deploy:
     needs: publish
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_production }}
     uses: dev-lukas/ci-cd-actions/.github/workflows/compose-deploy.yml@main
     with:
       deploy_services: ${{ inputs.deploy_services }}
