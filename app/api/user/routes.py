@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, session
 from app.config import Config
-from app.utils.database import DatabaseManager
+from app.utils.database import DatabaseManager, get_best_division_from_season_achievements
 from app.utils.security import login_required, handle_errors
 from app.utils.security import limiter
 
@@ -171,7 +171,7 @@ def get_connected_users():
             time_to_next_division = max(0, next_division_req - int(user_data[14]))
         elif user_data[5] == 5:
             div6_query = """
-            SELECT COUNT(u.id), MIN(COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0))
+            SELECT COUNT(u.id), MIN(COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0))
             FROM user u
             LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
             LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
@@ -222,12 +222,13 @@ def get_connected_users():
         if special_achievements_data:
             for achievement in special_achievements_data:
                 achievement_type = achievement[0]
-                if 101 <= achievement_type <= 106:
-                    best_division_achieved = max(best_division_achieved, achievement_type - 100)
-                elif achievement_type == 200:
+                if achievement_type == 200:
                     apex_division = True
-                elif achievement_type == 300:
-                    apex_rank = True
+
+        best_division_achieved = get_best_division_from_season_achievements(
+            [achievement[0] for achievement in special_achievements_data],
+        )
+        apex_rank = user_data[4] >= 25
 
         unlockable_query = """SELECT platform, unlockable_type
         FROM unlockables

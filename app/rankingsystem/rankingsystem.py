@@ -8,7 +8,12 @@ import valkey
 from app.config import Config
 from app.rankingsystem.bots.discord.bot import DiscordBot
 from app.rankingsystem.bots.teamspeak.bot import TeamspeakBot
-from app.utils.database import DatabaseManager, DatabaseConnectionError
+from app.utils.database import (
+    DatabaseManager,
+    DatabaseConnectionError,
+    SEASON_RESET_DAY,
+    SEASON_RESET_MONTH,
+)
 from app.utils.logger import RankingLogger
 
 logging = RankingLogger(__name__).get_logger()
@@ -45,10 +50,11 @@ class RankingSystem:
                 valkey_update_count = max(1, int(time_until_full_run / Config.VALKEY_UPDATE_INTERVAL))
                 
                 resets = self.database.get_last_resets()
-                last_daily, last_weekly, last_monthly = resets if resets else (None, None, None)
+                last_daily, last_weekly, last_monthly, last_season = resets if resets else (None, None, None, None)
                 today = now.date()
                 weekday = now.weekday()
                 first_of_month = now.day == 1
+                season_reset_due = (now.month, now.day) >= (SEASON_RESET_MONTH, SEASON_RESET_DAY)
 
                 
                 if not last_daily or (last_daily.date() != today):
@@ -63,6 +69,13 @@ class RankingSystem:
                     self.database.reset_time('monthly')
                     logging.info(f"Performed monthly time reset at {now}")
 
+                if season_reset_due and (not last_season or last_season.year < now.year):
+                    result = self.database.close_season(now)
+                    logging.info(
+                        f"Closed season at {now}: "
+                        f"{result['participants']} participants, "
+                        f"{result['achievement_rows']} achievement rows"
+                    )
 
                 for _ in range(valkey_update_count):
                     if not self.running:
@@ -317,6 +330,5 @@ class RankingSystem:
 
         except Exception as e:
             logging.error(f"Error handling TeamSpeak command: {e}")
-
 
 

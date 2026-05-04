@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app.config import Config
-from app.utils.database import DatabaseManager
+from app.utils.database import DatabaseManager, get_best_division_from_season_achievements
 from app.utils.security import limiter, handle_errors
 
 ranking_profile_bp = Blueprint('ranking_profile', __name__)
@@ -146,7 +146,7 @@ def get_ranking():
         time_to_next_division = max(0, next_division_req - season_time)
     elif division == 5:
         div6_query = """
-        SELECT COUNT(u.id), MIN(COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0))
+        SELECT COUNT(u.id), MIN(COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0))
         FROM user u
         LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
@@ -188,13 +188,9 @@ def get_ranking():
     if discord_id or teamspeak_id:
          special_achievements_data = db.execute_query(special_achievements_query, tuple(special_achievements_params))
 
-    best_division_achieved = 0
-
-    if special_achievements_data:
-        for achievement in special_achievements_data:
-            achievement_type = achievement[0]
-            if 101 <= achievement_type <= 106:
-                best_division_achieved = max(best_division_achieved, achievement_type - 100)
+    best_division_achieved = get_best_division_from_season_achievements(
+        [achievement[0] for achievement in special_achievements_data],
+    )
     
     db.close()
 
@@ -225,4 +221,3 @@ def get_ranking():
         },
         'login_streaks': streaks
     })
-

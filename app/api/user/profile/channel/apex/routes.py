@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request, session
-from app.utils.database import DatabaseManager
+from app.utils.database import DatabaseManager, can_upgrade_apex_channel
 from app.utils.valkey_manager import ValkeyManager
 from app.utils.security import csrf_required, limiter, login_required, handle_errors
 
@@ -44,10 +44,6 @@ def create_channel():
     
     if not platform_channel:
         return jsonify({'error': 'This account has no channel on this plattform'}), 400
-    if level < 20:
-        return jsonify({
-            'error': 'This account has not reached level 20'
-        }), 400
     
     special_achievements_query = """
         SELECT achievement_type
@@ -71,18 +67,13 @@ def create_channel():
     if discord_id or teamspeak_id:
          special_achievements_data = db.execute_query(special_achievements_query, tuple(special_achievements_params))
 
-    apex_achievement = 0
-    rank_apex_achievement = 0
+    achievement_types = []
 
     if special_achievements_data:
         for achievement in special_achievements_data:
-                achievement_type = achievement[0]
-                if achievement_type == 200:
-                    apex_achievement = 1
-                elif achievement_type == 300:
-                    rank_apex_achievement = 1
+            achievement_types.append(achievement[0])
         
-    if not apex_achievement and not rank_apex_achievement:
+    if not can_upgrade_apex_channel(level, achievement_types):
         return jsonify({'error': 'This account has not the requirements to unlock the Apex channel'}), 400
     
     query = """SELECT unlocked_at

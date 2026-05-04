@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from app.utils.database import DatabaseManager
+from app.utils.database import DatabaseManager, get_best_division_from_season_achievements
 from app.utils.security import handle_errors
 from app.utils.security import limiter
 
@@ -123,10 +123,11 @@ def get_achievements():
                 old_member_achievement = 1
             elif achievement_type == 2:
                 legacy_supporter_achievement = 1
-            elif 101 <= achievement_type <= 106:
-                division_achievement = max(division_achievement, achievement_type - 100)
             elif achievement_type == 200:
                 apex_achievement = 1
+        division_achievement = get_best_division_from_season_achievements(
+            [achievement[0] for achievement in special_achievements_data],
+        )
 
     streak_achievement = 0
     if longest_streak >= 30:

@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from app.utils.database import DatabaseManager
+from app.utils.database import DatabaseManager, is_season_division_achievement_type
 from app.utils.security import limiter, handle_errors
 
 ranking_top_bp = Blueprint('ranking_top', __name__)
@@ -151,9 +151,8 @@ def get_hall_of_fame():
         user_sa = set()
         if discord_id: user_sa |= sa_map.get(str(discord_id), set())
         if ts_id: user_sa |= sa_map.get(str(ts_id), set())
-        # Division (count levels reached)
-        for d in range(101, 107):
-            if d in user_sa: count += 1
+        # Season division markers are stored in season-specific ranges.
+        count += sum(1 for achievement_type in user_sa if is_season_division_achievement_type(achievement_type))
         if 1 in user_sa: count += 1   # old member
         if 2 in user_sa: count += 1   # legacy supporter
         if 200 in user_sa: count += 1 # apex

@@ -4,6 +4,15 @@ import unittest
 from flask import Flask, jsonify
 
 from app.config import Config
+from app.utils.database import (
+    SEASON_APEX_ACHIEVEMENT,
+    can_claim_season_skin,
+    can_upgrade_apex_channel,
+    get_season_number_for_end_year,
+    get_best_division_from_season_achievements,
+    get_season_division_achievement_types,
+    is_season_division_achievement_type,
+)
 from app.utils.security import csrf_required, generate_verification_code, login_required
 
 
@@ -19,6 +28,44 @@ class ConfigThresholdTests(unittest.TestCase):
         self.assertEqual(Config.get_division_for_minutes(2_999), 1)
         self.assertEqual(Config.get_division_for_minutes(3_000), 2)
         self.assertEqual(Config.get_division_for_minutes(24_000), 5)
+
+
+class SeasonRewardHelperTests(unittest.TestCase):
+    def test_division_achievement_markers_are_cumulative(self):
+        self.assertEqual(get_season_division_achievement_types(1), [1001])
+        self.assertEqual(get_season_division_achievement_types(4), [1001, 1002, 1003, 1004])
+        self.assertEqual(get_season_division_achievement_types(6), [1001, 1002, 1003, 1004, 1005, 1006])
+
+    def test_division_achievement_markers_are_capped(self):
+        self.assertEqual(get_season_division_achievement_types(0), [])
+        self.assertEqual(get_season_division_achievement_types(7), [1001, 1002, 1003, 1004, 1005, 1006])
+
+    def test_division_achievement_markers_are_season_specific(self):
+        self.assertEqual(get_season_number_for_end_year(2026), 1)
+        self.assertEqual(get_season_number_for_end_year(2027), 2)
+        self.assertEqual(get_season_division_achievement_types(5, season_number=2), [1011, 1012, 1013, 1014, 1015])
+        self.assertEqual(get_season_division_achievement_types(6, season_number=3), [1021, 1022, 1023, 1024, 1025, 1026])
+
+    def test_best_division_reads_season_one_only_by_default(self):
+        self.assertEqual(get_best_division_from_season_achievements([1001, 1002, 1005, 1016]), 5)
+        self.assertEqual(get_best_division_from_season_achievements([1011, 1012], season_number=2), 2)
+
+    def test_season_division_marker_detection_uses_high_range(self):
+        self.assertTrue(is_season_division_achievement_type(1001))
+        self.assertTrue(is_season_division_achievement_type(1016))
+        self.assertFalse(is_season_division_achievement_type(101))
+        self.assertFalse(is_season_division_achievement_type(200))
+
+    def test_skin_claim_requires_tier_at_or_below_best_division(self):
+        self.assertTrue(can_claim_season_skin(5, 2))
+        self.assertTrue(can_claim_season_skin(5, 5))
+        self.assertFalse(can_claim_season_skin(5, 6))
+        self.assertFalse(can_claim_season_skin(6, 1))
+
+    def test_apex_upgrade_uses_season_apex_or_level_25(self):
+        self.assertTrue(can_upgrade_apex_channel(10, [SEASON_APEX_ACHIEVEMENT]))
+        self.assertTrue(can_upgrade_apex_channel(25, []))
+        self.assertFalse(can_upgrade_apex_channel(24, [1001, 1002, 1003, 1004, 1005, 1006]))
 
 
 class SecurityHelperTests(unittest.TestCase):

@@ -1,5 +1,9 @@
 from flask import Blueprint, jsonify, request, session
-from app.utils.database import DatabaseManager
+from app.utils.database import (
+    DatabaseManager,
+    can_claim_season_skin,
+    get_best_division_from_season_achievements,
+)
 from app.utils.security import csrf_required, limiter, login_required, handle_errors
 from app.utils.valkey_manager import ValkeyManager
 
@@ -66,14 +70,11 @@ def set_skin():
     if discord_id or teamspeak_id:
         special_achievements_data = db.execute_query(special_achievements_query, tuple(special_achievements_params))
 
-    best_division_achieved = 0
-    if special_achievements_data:
-            for achievement in special_achievements_data:
-                achievement_type = achievement[0]
-                if 101 <= achievement_type <= 106:
-                    best_division_achieved = max(best_division_achieved, achievement_type - 100)  
+    best_division_achieved = get_best_division_from_season_achievements(
+        [achievement[0] for achievement in special_achievements_data],
+    )
 
-    if tier != best_division_achieved:
+    if not can_claim_season_skin(best_division_achieved, tier):
         return jsonify({
             'error': 'This account has not reached the needed tier'
         }), 400

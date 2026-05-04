@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Set, Tuple, Union, Callable
+from typing import List, Optional, Set, Tuple, Union, Callable, Iterable
 import mariadb
 from app.utils.logger import RankingLogger
 from app.config import Config
@@ -7,6 +7,64 @@ from app.config import Config
 logging = RankingLogger(__name__).get_logger()
 
 __all__ = ['DatabaseManager']
+
+SEASON_RESET_MONTH = 6
+SEASON_RESET_DAY = 1
+SEASON_ONE_END_YEAR = 2026
+SEASON_DIVISION_ACHIEVEMENT_BASE = 1000
+SEASON_DIVISION_ACHIEVEMENT_STEP = 10
+SEASON_APEX_ACHIEVEMENT = 200
+
+
+def get_season_number_for_end_year(end_year: int) -> int:
+    return max(1, end_year - SEASON_ONE_END_YEAR + 1)
+
+
+def get_season_division_achievement_base(season_number: int) -> int:
+    return SEASON_DIVISION_ACHIEVEMENT_BASE + ((max(1, season_number) - 1) * SEASON_DIVISION_ACHIEVEMENT_STEP)
+
+
+def get_season_division_achievement_types(division: int, season_number: int = 1) -> List[int]:
+    """Return cumulative season division achievement markers for a division."""
+    if division is None:
+        return []
+
+    base = get_season_division_achievement_base(season_number)
+    capped_division = max(0, min(int(division), 6))
+    return [
+        base + earned_division
+        for earned_division in range(1, capped_division + 1)
+    ]
+
+
+def get_division_from_season_achievement_type(achievement_type: int, season_number: int = 1) -> int:
+    base = get_season_division_achievement_base(season_number)
+    division = achievement_type - base
+    return division if 1 <= division <= 6 else 0
+
+
+def get_best_division_from_season_achievements(
+    achievement_types: Iterable[int],
+    season_number: int = 1,
+) -> int:
+    return max(
+        (get_division_from_season_achievement_type(achievement_type, season_number)
+         for achievement_type in achievement_types),
+        default=0,
+    )
+
+
+def is_season_division_achievement_type(achievement_type: int) -> bool:
+    return achievement_type >= SEASON_DIVISION_ACHIEVEMENT_BASE and 1 <= (achievement_type % 10) <= 6
+
+
+def can_claim_season_skin(best_division: int, tier: int) -> bool:
+    return tier in range(2, 7) and best_division >= tier
+
+
+def can_upgrade_apex_channel(level: int, achievement_types: Iterable[int]) -> bool:
+    return level >= 25 or SEASON_APEX_ACHIEVEMENT in set(achievement_types)
+
 
 class DatabaseConnectionError(Exception):
     """Custom exception for database connection errors."""
@@ -170,12 +228,19 @@ class DatabaseManager:
                     id INT PRIMARY KEY DEFAULT 1,
                     last_daily_reset DATETIME,
                     last_weekly_reset DATETIME,
-                    last_monthly_reset DATETIME
+                    last_monthly_reset DATETIME,
+                    last_season_reset DATETIME
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
             self.cursor.execute("""
-                INSERT IGNORE INTO reset_log (id, last_daily_reset, last_weekly_reset, last_monthly_reset)
-                VALUES (1, NULL, NULL, NULL)
+                ALTER TABLE reset_log
+                ADD COLUMN IF NOT EXISTS last_season_reset DATETIME
+            """)
+            self.cursor.execute("""
+                INSERT IGNORE INTO reset_log (
+                    id, last_daily_reset, last_weekly_reset, last_monthly_reset, last_season_reset
+                )
+                VALUES (1, NULL, NULL, NULL, NULL)
             """)
 
             self.conn.commit()
@@ -535,8 +600,81 @@ class DatabaseManager:
 
     @ensure_connection
     def get_last_resets(self):
-        self.cursor.execute("SELECT last_daily_reset, last_weekly_reset, last_monthly_reset FROM reset_log WHERE id = 1")
+        self.cursor.execute("""
+            SELECT last_daily_reset, last_weekly_reset, last_monthly_reset, last_season_reset
+            FROM reset_log
+            WHERE id = 1
+        """)
         return self.cursor.fetchone()
+
+    @ensure_connection
+    def close_season(self, closed_at: Optional[datetime] = None) -> dict:
+        """
+        Award end-of-season markers from the current division state, then reset
+        seasonal counters and divisions for the next season.
+        """
+        closed_at = closed_at or datetime.now()
+        season_number = get_season_number_for_end_year(closed_at.year)
+
+        try:
+            self.cursor.execute("""
+                SELECT
+                    u.id,
+                    u.discord_id,
+                    u.teamspeak_id,
+                    COALESCE(u.division, 1) AS division,
+                    COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time
+                FROM user u
+                LEFT JOIN time d
+                    ON d.platform = 'discord'
+                    AND d.platform_uid = u.discord_id
+                LEFT JOIN time t
+                    ON t.platform = 'teamspeak'
+                    AND t.platform_uid = u.teamspeak_id
+                WHERE COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) > 0
+                ORDER BY season_time DESC, u.id ASC
+            """)
+            participants = self.cursor.fetchall()
+
+            achievement_rows = []
+            for index, (_, discord_id, teamspeak_id, division, _) in enumerate(participants):
+                achievement_types = get_season_division_achievement_types(division, season_number)
+                if index == 0:
+                    achievement_types.append(SEASON_APEX_ACHIEVEMENT)
+
+                platform_ids = []
+                if discord_id:
+                    platform_ids.append(('discord', str(discord_id)))
+                if teamspeak_id:
+                    platform_ids.append(('teamspeak', str(teamspeak_id)))
+
+                for platform, platform_id in platform_ids:
+                    for achievement_type in achievement_types:
+                        achievement_rows.append((platform, platform_id, achievement_type))
+
+            if achievement_rows:
+                self.cursor.executemany("""
+                    INSERT IGNORE INTO special_achievements
+                        (platform, platform_id, achievement_type)
+                    VALUES (?, ?, ?)
+                """, achievement_rows)
+
+            self.cursor.execute("UPDATE time SET season_time = 0")
+            self.cursor.execute("UPDATE user SET division = 1")
+            self.cursor.execute("""
+                UPDATE reset_log
+                SET last_season_reset = ?
+                WHERE id = 1
+            """, (closed_at,))
+            self.conn.commit()
+
+            return {
+                'participants': len(participants),
+                'achievement_rows': len(achievement_rows),
+            }
+        except mariadb.Error:
+            self.conn.rollback()
+            raise
 
     @ensure_connection
     def get_platform_ids(self, platform: str, platform_id: str) -> Tuple[Optional[str], Optional[str]]:
