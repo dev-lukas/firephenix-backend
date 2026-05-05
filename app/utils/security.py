@@ -25,6 +25,17 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        steam_id = session.get('steam_id')
+        if not steam_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+        if str(steam_id) not in Config.ADMIN_STEAM_IDS:
+            return jsonify({'error': 'Forbidden'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
 def generate_csrf_token() -> str:
     token = secrets.token_urlsafe(32)
     session['csrf_token'] = token

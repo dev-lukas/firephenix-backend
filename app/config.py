@@ -4,6 +4,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def parse_admin_steam_ids(value):
+    if not value:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [
+        item.strip()
+        for item in str(value).replace("\n", ",").split(",")
+        if item.strip()
+    ]
+
 class Config:
     # Logger Level
     LOGGER_LEVEL = logging.INFO
@@ -16,6 +27,9 @@ class Config:
         for origin in os.getenv("CORS_ORIGINS", SITE_URL).split(",")
         if origin.strip()
     ]
+    ADMIN_STEAM_IDS = parse_admin_steam_ids(
+        os.getenv("admin_steam_ids", os.getenv("ADMIN_STEAM_IDS", ""))
+    )
     # Discord
     DISCORD_TOKEN=os.getenv("DISCORD_TOKEN")
     DISCORD_EXCLUDED_ROLE_ID="12312312312"
