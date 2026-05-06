@@ -5,8 +5,8 @@ from flask import Flask, jsonify
 
 from app.api.gameservers import routes as gameserver_routes
 from app.config import Config, parse_admin_steam_ids
-from app.utils.gameserver_manager import GameServerCommandClient
 from app.utils.security import admin_required
+from app.utils.valkey_manager import ValkeyManager
 
 
 class FakeValkey:
@@ -84,51 +84,96 @@ class AdminGuardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
 
-class GameServerCommandClientTests(unittest.TestCase):
+class GameServerCommandTests(unittest.TestCase):
     def test_command_success_publishes_and_reads_response(self):
         response_json = json.dumps({"ok": True, "server": "ttt"})
         fake = FakeValkey()
-        client = GameServerCommandClient(fake, timeout_seconds=0.01, poll_interval_seconds=0)
+        manager = ValkeyManager()
+        original_valkey = manager.valkey
+        manager.valkey = fake
 
-        original_get = fake.get
+        try:
+            original_get = fake.get
 
-        def get_after_publish(key):
-            if ":responses:" in key:
-                return response_json
-            return original_get(key)
+            def get_after_publish(key):
+                if ":responses:" in key:
+                    return response_json
+                return original_get(key)
 
-        fake.get = get_after_publish
-        payload, status = client.command("ttt", "status")
+            fake.get = get_after_publish
+            payload, status = manager.gameserver_command("ttt", "status", timeout_seconds=0.01, poll_interval_seconds=0)
+        finally:
+            manager.valkey = original_valkey
 
         self.assertEqual(status, 200)
         self.assertEqual(payload["ok"], True)
         self.assertEqual(fake.published[0][0], "gameserver:ttt:commands")
         self.assertEqual(fake.published[0][1]["command"], "status")
 
+    def test_command_publishes_extra_payload(self):
+        fake = FakeValkey()
+        manager = ValkeyManager()
+        original_valkey = manager.valkey
+        manager.valkey = fake
+        try:
+            fake.get = lambda key: json.dumps({"ok": True}) if ":responses:" in key else None
+
+            payload, status = manager.gameserver_command("ttt", "grant_season_skin", {
+                "steam_id64": "76561198000000000",
+                "steam_id2": "STEAM_0:0:19867136",
+                "tier": 2,
+                "item_uuid": "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
+                "reward_key": "season_1_tier_2",
+            }, timeout_seconds=0.01, poll_interval_seconds=0)
+        finally:
+            manager.valkey = original_valkey
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["ok"], True)
+        published = fake.published[0][1]
+        self.assertEqual(published["command"], "grant_season_skin")
+        self.assertEqual(published["steam_id64"], "76561198000000000")
+        self.assertEqual(published["steam_id2"], "STEAM_0:0:19867136")
+
     def test_command_returns_manager_error(self):
         fake = FakeValkey()
-        client = GameServerCommandClient(fake, timeout_seconds=0.01, poll_interval_seconds=0)
-        fake.get = lambda key: json.dumps({"ok": False, "error": "manager_error"}) if ":responses:" in key else None
+        manager = ValkeyManager()
+        original_valkey = manager.valkey
+        manager.valkey = fake
+        try:
+            fake.get = lambda key: json.dumps({"ok": False, "error": "manager_error"}) if ":responses:" in key else None
 
-        payload, status = client.command("ttt", "restart")
+            payload, status = manager.gameserver_command("ttt", "restart", timeout_seconds=0.01, poll_interval_seconds=0)
+        finally:
+            manager.valkey = original_valkey
 
         self.assertEqual(status, 502)
         self.assertEqual(payload["error"], "manager_error")
 
     def test_command_timeout_without_heartbeat_is_unavailable(self):
         fake = FakeValkey()
-        client = GameServerCommandClient(fake, timeout_seconds=0.01, poll_interval_seconds=0)
+        manager = ValkeyManager()
+        original_valkey = manager.valkey
+        manager.valkey = fake
 
-        payload, status = client.command("ttt", "restart")
+        try:
+            payload, status = manager.gameserver_command("ttt", "restart", timeout_seconds=0.01, poll_interval_seconds=0)
+        finally:
+            manager.valkey = original_valkey
 
         self.assertEqual(status, 503)
         self.assertEqual(payload["error"], "manager_unavailable")
 
     def test_command_timeout_with_heartbeat_is_timeout(self):
         fake = FakeValkey(status=json.dumps({"manager": "online"}))
-        client = GameServerCommandClient(fake, timeout_seconds=0.01, poll_interval_seconds=0)
+        manager = ValkeyManager()
+        original_valkey = manager.valkey
+        manager.valkey = fake
 
-        payload, status = client.command("ttt", "restart")
+        try:
+            payload, status = manager.gameserver_command("ttt", "restart", timeout_seconds=0.01, poll_interval_seconds=0)
+        finally:
+            manager.valkey = original_valkey
 
         self.assertEqual(status, 504)
         self.assertEqual(payload["error"], "manager_timeout")
@@ -137,18 +182,18 @@ class GameServerCommandClientTests(unittest.TestCase):
 class GameServerRouteTests(unittest.TestCase):
     def setUp(self):
         self.original_admins = Config.ADMIN_STEAM_IDS
-        self.original_client = gameserver_routes.GameServerCommandClient
+        self.original_manager = gameserver_routes.valkey_manager
         Config.ADMIN_STEAM_IDS = ["76561198000000000"]
 
-        class StubClient:
-            def command(self, server_id, command):
+        class StubManager:
+            def gameserver_command(self, server_id, command):
                 return {"ok": True, "server": server_id, "command": command}, 200
 
-        gameserver_routes.GameServerCommandClient = StubClient
+        gameserver_routes.valkey_manager = StubManager()
 
     def tearDown(self):
         Config.ADMIN_STEAM_IDS = self.original_admins
-        gameserver_routes.GameServerCommandClient = self.original_client
+        gameserver_routes.valkey_manager = self.original_manager
 
     def make_app(self):
         app = Flask(__name__)

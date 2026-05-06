@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def parse_admin_steam_ids(value):
     if not value:
         return []
@@ -63,6 +64,13 @@ class Config:
     VALKEY_PORT = int(os.getenv("VALKEY_PORT", "6379"))
     VALKEY_DB = 0
     VALKEY_UPDATE_INTERVAL = 2
+    TTT_SEASON_REWARD_ITEM_UUIDS = {
+        2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
+        3: "36648F60-EA1F-449A-94AD-98914B3BF8AC",
+        4: "E2223E93-6831-4C3E-A295-3086153172F6",
+        5: "E5FF810F-AEC9-4F36-9333-36CA21F82B64",
+        6: "7FEBD81C-6F6D-4C6F-871F-84CD6D42D517",
+    }
     # Limiter
     LIMITER_STORAGE_URI=os.getenv("LIMITER_STORAGE_URI", f"valkey://{VALKEY_HOST}:{VALKEY_PORT}")
     # Bot process management

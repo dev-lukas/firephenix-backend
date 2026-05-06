@@ -1,14 +1,15 @@
 from flask import Blueprint, jsonify
 
-from app.utils.gameserver_manager import GameServerCommandClient
 from app.utils.security import admin_required, csrf_required, handle_errors
+from app.utils.valkey_manager import ValkeyManager
 
 
 gameservers_bp = Blueprint('gameservers', __name__)
+valkey_manager = ValkeyManager()
 
 
 def run_ttt_command(command: str):
-    payload, status_code = GameServerCommandClient().command('ttt', command)
+    payload, status_code = valkey_manager.gameserver_command('ttt', command)
     return jsonify(payload), status_code
 
 
