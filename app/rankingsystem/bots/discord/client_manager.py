@@ -1,4 +1,5 @@
 import asyncio
+import re
 import discord
 from discord.ext import commands, tasks
 from app.utils.database import DatabaseManager, DatabaseConnectionError
@@ -8,6 +9,30 @@ from app.rankingsystem.bots.discord.utils import set_ranks
 from app.rankingsystem.bots.discord.aichat import handle_chat_message
 
 logging = RankingLogger(__name__).get_logger()
+
+EMBER_WAKE_WORD_RE = re.compile(r"(?<![A-Za-z0-9_])ember(?![A-Za-z0-9_])", re.IGNORECASE)
+
+
+def should_handle_ember_message(message, bot_user, guild_id):
+    author = getattr(message, "author", None)
+    if not author or getattr(author, "bot", False):
+        return False
+
+    if getattr(message, "webhook_id", None):
+        return False
+
+    guild = getattr(message, "guild", None)
+    if not guild or getattr(guild, "id", None) != guild_id:
+        return False
+
+    if bot_user:
+        try:
+            if bot_user.mentioned_in(message):
+                return True
+        except AttributeError:
+            pass
+
+    return bool(EMBER_WAKE_WORD_RE.search(getattr(message, "content", "") or ""))
 
 
 class ClientManager(commands.Cog):
@@ -285,13 +310,15 @@ class ClientManager(commands.Cog):
     
     @commands.Cog.listener()
     async def on_message(self, message):
-        """Listen for chat messages in a specific channel and respond using OpenRouter."""
-        if (
-            message.channel.id == Config.DISCORD_CHAT_CHANNEL
-            and not message.author.bot
-        ):
-            response = await handle_chat_message(message)
+        """Respond with Ember when directly invoked by mention or wake word."""
+        if should_handle_ember_message(message, self.bot.user, Config.DISCORD_GUILD_ID):
+            async with message.channel.typing():
+                response = await handle_chat_message(message)
+
             if response:
-                await message.channel.send(response)
+                await message.channel.send(
+                    response,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
             else:
                 await message.channel.send(stickers=[discord.Object(id=Config.DISCORD_EMBER_STICKER)])

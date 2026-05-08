@@ -40,7 +40,6 @@ class Config:
     DISCORD_MOVE_BLOCK_ID=1355153601529516072
     DISCORD_PARENT_CHANNEL=1329604014756855880
     DISCORD_APEX_PARENT_CHANNEL=1363569345724285088
-    DISCORD_CHAT_CHANNEL=292753223536869376
     DISCORD_EMBER_STICKER=1376678129250074716
     # TeamSpeak
     TS3_HOST=os.getenv("TS3_HOST", "127.0.0.1")
@@ -83,14 +82,19 @@ class Config:
     # Preferred providers in priority order — the best available free model
     # from the highest-priority provider is selected automatically.
     OPENROUTER_PREFERRED_PROVIDERS = [
-        "google",
         "deepseek",
         "meta-llama",
-        "qwen",
+        "openai",
+        "google",
         "mistralai",
+        "qwen",
     ]
     # Cache TTL for the free model list (seconds)
     OPENROUTER_MODEL_CACHE_TTL = 3600
+    OPENROUTER_MIN_CONTEXT_LENGTH = 16000
+    OPENROUTER_MODEL_FALLBACK_LIMIT = 5
+    EMBER_CONTEXT_MESSAGE_LIMIT = 30
+    EMBER_CONTEXT_CHAR_LIMIT = 6000
     # VPNApi.io
     VPNAPI_API_KEY = os.getenv("VPNAPI_API_KEY")
     # Rankingsystem
