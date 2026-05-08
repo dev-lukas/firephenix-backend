@@ -1,4 +1,5 @@
 import asyncio
+import logging as python_logging
 import types
 import unittest
 
@@ -18,11 +19,22 @@ class FakeDiscordClient:
 
     def __init__(self, *args, **kwargs):
         self.events = {}
-        FakeDiscordClient.instances.append(self)
+        type(self).instances.append(self)
 
     def event(self, func):
         self.events[func.__name__] = func
         return func
+
+
+class StopRun(BaseException):
+    pass
+
+
+class FakeRunDiscordClient(FakeDiscordClient):
+    def run(self, token, **kwargs):
+        self.run_token = token
+        self.run_kwargs = kwargs
+        raise StopRun()
 
 
 class DiscordVoiceScanTests(unittest.TestCase):
@@ -77,6 +89,50 @@ class DiscordVoiceScanTests(unittest.TestCase):
         self.assertEqual(len(FakeDiscordClient.instances), 2)
         self.assertIn("on_ready", first.events)
         self.assertIn("on_ready", second.events)
+
+    def test_discord_bot_disables_library_log_handler_on_run(self):
+        original_bot = discord_bot_module.commands.Bot
+        FakeRunDiscordClient.instances = []
+        discord_bot_module.commands.Bot = FakeRunDiscordClient
+        try:
+            bot = DiscordBot()
+            with self.assertRaises(StopRun):
+                bot.run()
+        finally:
+            discord_bot_module.commands.Bot = original_bot
+
+        self.assertEqual(len(FakeRunDiscordClient.instances), 1)
+        self.assertIsNone(FakeRunDiscordClient.instances[0].run_kwargs.get("log_handler"))
+
+    def test_discord_library_logger_is_configured_once(self):
+        discord_logger = python_logging.getLogger("discord")
+        original_handlers = list(discord_logger.handlers)
+        original_level = discord_logger.level
+        original_propagate = discord_logger.propagate
+        original_configured = getattr(discord_logger, "_firephenix_configured", None)
+
+        try:
+            discord_logger.handlers[:] = []
+            if hasattr(discord_logger, "_firephenix_configured"):
+                delattr(discord_logger, "_firephenix_configured")
+
+            DiscordBot()
+            first_handlers = list(discord_logger.handlers)
+            DiscordBot()
+
+            self.assertEqual(len(first_handlers), 1)
+            self.assertEqual(discord_logger.handlers, first_handlers)
+            self.assertFalse(discord_logger.propagate)
+            self.assertEqual(discord_logger.level, Config.LOGGER_LEVEL)
+        finally:
+            discord_logger.handlers[:] = original_handlers
+            discord_logger.setLevel(original_level)
+            discord_logger.propagate = original_propagate
+            if original_configured is None:
+                if hasattr(discord_logger, "_firephenix_configured"):
+                    delattr(discord_logger, "_firephenix_configured")
+            else:
+                discord_logger._firephenix_configured = original_configured
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import time
 import asyncio
+import logging as python_logging
 import discord
 from discord.ext import commands
 from app.utils.logger import RankingLogger
@@ -10,11 +11,30 @@ from app.rankingsystem.bots.discord.utils import set_ranks, send_verification, c
 logging = RankingLogger(__name__).get_logger()
 
 
+def configure_discord_library_logging():
+    discord_logger = python_logging.getLogger("discord")
+    discord_logger.setLevel(Config.LOGGER_LEVEL)
+    discord_logger.propagate = False
+
+    if getattr(discord_logger, "_firephenix_configured", False):
+        return
+
+    if not discord_logger.handlers:
+        handler = python_logging.StreamHandler()
+        handler.setFormatter(
+            python_logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        )
+        discord_logger.addHandler(handler)
+
+    discord_logger._firephenix_configured = True
+
+
 class DiscordBot:
     BASE_RECONNECT_DELAY = 5
     MAX_RECONNECT_DELAY = 300
 
     def __init__(self):
+        configure_discord_library_logging()
         self.token = Config.DISCORD_TOKEN
         self.intents = discord.Intents.default()
         self.intents.voice_states = True
@@ -39,11 +59,14 @@ class DiscordBot:
 
     def run(self):
         reconnect_delay = self.BASE_RECONNECT_DELAY
+        attempt = 0
         while self.running:
+            attempt += 1
             self.time_tracker = None
             self.bot = self.create_bot()
             try:
-                self.bot.run(self.token)
+                logging.info(f"Starting Discord session attempt {attempt}.")
+                self.bot.run(self.token, log_handler=None)
                 reconnect_delay = self.BASE_RECONNECT_DELAY
             except discord.errors.ConnectionClosed:
                 logging.error("Connection to Discord lost.")
