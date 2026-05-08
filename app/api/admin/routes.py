@@ -577,7 +577,7 @@ def grant_ttt_season_skin():
             "ttt",
             "grant_season_skin",
             command_payload,
-            timeout_seconds=25,
+            timeout_seconds=60,
         )
         result_status = "success" if status_code == 200 else "failed"
         _write_audit(db, action, target_identifiers, {

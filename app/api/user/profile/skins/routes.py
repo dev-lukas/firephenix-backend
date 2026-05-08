@@ -126,7 +126,7 @@ def set_skin():
             'tier': tier,
             'item_uuid': item_uuid,
             'reward_key': f'season_1_tier_{tier}',
-        }, timeout_seconds=25)
+        }, timeout_seconds=60)
         if not grant_payload.get('ok'):
             return ttt_error_response(grant_payload, grant_status)
 

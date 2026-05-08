@@ -116,7 +116,7 @@ class SkinRedemptionRouteTests(unittest.TestCase):
         self.assertEqual(command_payload["steam_id64"], "76561198000000000")
         self.assertEqual(command_payload["steam_id2"], "STEAM_0:0:19867136")
         self.assertEqual(command_payload["item_uuid"], Config.TTT_SEASON_REWARD_ITEM_UUIDS[2])
-        self.assertEqual(stub.calls[0][3]["timeout_seconds"], 25)
+        self.assertEqual(stub.calls[0][3]["timeout_seconds"], 60)
         self.assertEqual(FakeDatabase.instances[0].inserts[0][1], ("76561198000000000", 12))
 
     def test_rejects_duplicate_without_calling_ttt(self):
