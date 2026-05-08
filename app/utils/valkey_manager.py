@@ -9,6 +9,12 @@ logging = RankingLogger(__name__).get_logger()
 
 class ValkeyManager:
     ALLOWED_GAMESERVER_COMMANDS = {"status", "healthcheck", "restart", "start", "stop", "grant_season_skin"}
+    GAMESERVER_ERROR_STATUS_CODES = {
+        "invalid_reward_request": 400,
+        "player_offline": 409,
+        "pointshop_inventory_unavailable": 503,
+        "pointshop_unavailable": 503,
+    }
 
     _instance = None
     
@@ -187,7 +193,7 @@ class ValkeyManager:
                 except json.JSONDecodeError:
                     return {"ok": False, "error": "invalid_manager_response"}, 502
                 if response.get("error"):
-                    return response, 502
+                    return response, self.GAMESERVER_ERROR_STATUS_CODES.get(response.get("error"), 502)
                 return response, 200
             time.sleep(poll_interval_seconds)
 

@@ -143,6 +143,23 @@ class SkinRedemptionRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "Reward item is not configured on the TTT server")
         self.assertEqual(FakeDatabase.instances[0].inserts, [])
 
+    def test_ttt_error_response_maps_online_only_failures(self):
+        app = self.make_app()
+        with app.app_context():
+            response, status = skin_routes.ttt_error_response({"error": "player_offline"}, 409)
+            inventory_response, inventory_status = skin_routes.ttt_error_response(
+                {"error": "pointshop_inventory_unavailable"},
+                503,
+            )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(response.get_json()["error"], "You must be online on the TTT server to claim this reward")
+        self.assertEqual(inventory_status, 503)
+        self.assertEqual(
+            inventory_response.get_json()["error"],
+            "TTT Pointshop inventory is still loading, try again in a moment",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -150,6 +150,21 @@ class GameServerCommandTests(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertEqual(payload["error"], "manager_error")
 
+    def test_command_maps_expected_grant_failure_status(self):
+        fake = FakeValkey()
+        manager = ValkeyManager()
+        original_valkey = manager.valkey
+        manager.valkey = fake
+        try:
+            fake.get = lambda key: json.dumps({"ok": False, "error": "player_offline"}) if ":responses:" in key else None
+
+            payload, status = manager.gameserver_command("ttt", "grant_season_skin", timeout_seconds=0.01, poll_interval_seconds=0)
+        finally:
+            manager.valkey = original_valkey
+
+        self.assertEqual(status, 409)
+        self.assertEqual(payload["error"], "player_offline")
+
     def test_command_timeout_without_heartbeat_is_unavailable(self):
         fake = FakeValkey()
         manager = ValkeyManager()
