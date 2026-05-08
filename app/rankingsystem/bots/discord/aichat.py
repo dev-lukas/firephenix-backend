@@ -14,6 +14,7 @@ logging = RankingLogger(__name__).get_logger()
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_FREE_ROUTER = "openrouter/free"
+OPENROUTER_MAX_FALLBACK_MODELS = 3
 
 _model_cache = {"models": None, "fetched_at": 0}
 
@@ -44,6 +45,7 @@ _PREFERRED_CHAT_TERMS = (
     "instruct",
 )
 _REASONING_MODEL_TERMS = ("r1", "reasoning", "qwq", "thinking")
+_PARAMETER_COUNT_RE = re.compile(r"(?<![a-z0-9])(\d+(?:\.\d+)?)\s*([bm])(?:[-_/:\s]|$)", re.IGNORECASE)
 
 
 SYSTEM_PROMPT = """\
@@ -192,6 +194,17 @@ def _quality_score(model_id):
     return score
 
 
+def _parameter_count_score(model_id):
+    scores = []
+    for amount, unit in _PARAMETER_COUNT_RE.findall(model_id.lower()):
+        multiplier = 1_000 if unit == "b" else 1
+        try:
+            scores.append(float(amount) * multiplier)
+        except ValueError:
+            continue
+    return max(scores) if scores else 0
+
+
 def _rank_free_models(models):
     candidates = [model for model in models if _is_free_text_chat_model(model)]
 
@@ -202,6 +215,7 @@ def _rank_free_models(models):
         return (
             _provider_rank(model_id),
             -_quality_score(model_id),
+            -_parameter_count_score(model_id),
             -context_length,
             -created,
             model_id,
@@ -211,7 +225,8 @@ def _rank_free_models(models):
 
 
 def _select_openrouter_models(ranked_model_ids):
-    max_models = max(1, _config_int("OPENROUTER_MODEL_FALLBACK_LIMIT", 5))
+    configured_limit = _config_int("OPENROUTER_MODEL_FALLBACK_LIMIT", OPENROUTER_MAX_FALLBACK_MODELS)
+    max_models = min(OPENROUTER_MAX_FALLBACK_MODELS, max(1, configured_limit))
     selected = []
 
     for model_id in ranked_model_ids:

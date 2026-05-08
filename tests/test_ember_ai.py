@@ -85,7 +85,7 @@ class OpenRouterModelSelectionTests(unittest.TestCase):
         self.original_min_context = Config.OPENROUTER_MIN_CONTEXT_LENGTH
         self.original_limit = Config.OPENROUTER_MODEL_FALLBACK_LIMIT
         Config.OPENROUTER_MIN_CONTEXT_LENGTH = 16000
-        Config.OPENROUTER_MODEL_FALLBACK_LIMIT = 5
+        Config.OPENROUTER_MODEL_FALLBACK_LIMIT = 3
 
     def tearDown(self):
         Config.OPENROUTER_MIN_CONTEXT_LENGTH = self.original_min_context
@@ -126,7 +126,48 @@ class OpenRouterModelSelectionTests(unittest.TestCase):
         )
 
         self.assertEqual(selected[-1], aichat.OPENROUTER_FREE_ROUTER)
-        self.assertEqual(len(selected), 5)
+        self.assertLessEqual(len(selected), 3)
+        self.assertEqual(
+            selected,
+            [
+                "google/gemini-2.5-flash:free",
+                "deepseek/deepseek-chat:free",
+                aichat.OPENROUTER_FREE_ROUTER,
+            ],
+        )
+
+    def test_select_models_never_exceeds_openrouter_models_limit(self):
+        Config.OPENROUTER_MODEL_FALLBACK_LIMIT = 10
+
+        selected = aichat._select_openrouter_models(
+            [
+                "deepseek/deepseek-chat:free",
+                "google/gemini-2.5-flash:free",
+                "qwen/qwen3:free",
+                "meta-llama/llama-3.3:free",
+            ]
+        )
+
+        self.assertEqual(len(selected), 3)
+        self.assertEqual(selected[-1], aichat.OPENROUTER_FREE_ROUTER)
+
+    def test_parameter_count_breaks_same_provider_quality_ties(self):
+        ranked = aichat._rank_free_models(
+            [
+                openrouter_model("meta-llama/llama-3.2-3b-instruct:free", context_length=131000),
+                openrouter_model("meta-llama/llama-3.3-70b-instruct:free", context_length=131000),
+                openrouter_model("meta-llama/llama-4-30b-instruct:free", context_length=131000),
+            ]
+        )
+
+        self.assertEqual(
+            ranked,
+            [
+                "meta-llama/llama-3.3-70b-instruct:free",
+                "meta-llama/llama-4-30b-instruct:free",
+                "meta-llama/llama-3.2-3b-instruct:free",
+            ],
+        )
 
 
 class FakeChannel:
