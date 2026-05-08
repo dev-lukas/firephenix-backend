@@ -102,14 +102,14 @@ class GameServerCommandTests(unittest.TestCase):
                 return original_get(key)
 
             fake.get = get_after_publish
-            payload, status = manager.gameserver_command("ttt", "status", timeout_seconds=0.01, poll_interval_seconds=0)
+            payload, status = manager.gameserver_command("ttt", "restart", timeout_seconds=0.01, poll_interval_seconds=0)
         finally:
             manager.valkey = original_valkey
 
         self.assertEqual(status, 200)
         self.assertEqual(payload["ok"], True)
         self.assertEqual(fake.published[0][0], "gameserver:ttt:commands")
-        self.assertEqual(fake.published[0][1]["command"], "status")
+        self.assertEqual(fake.published[0][1]["command"], "restart")
 
     def test_command_publishes_extra_payload(self):
         fake = FakeValkey()

@@ -523,17 +523,26 @@ def assign_ignore_role():
         if not platform_uid:
             return _admin_error(db, action, target_identifiers, {}, f"user has no {platform} id")
 
-        result = valkey_manager.set_ignore_role(platform, platform_uid)
+        command_response = valkey_manager.set_ignore_role(platform, platform_uid)
+        if isinstance(command_response, dict):
+            result = bool(command_response.get("ok", command_response.get("result")))
+        else:
+            result = bool(command_response)
+            command_response = {"ok": result, "result": command_response}
         result_status = "success" if result else "failed"
         summary = {
             "platform_uid": platform_uid,
             "role_id": Config.DISCORD_EXCLUDED_ROLE_ID if platform == "discord" else Config.TS3_EXCLUDED_ROLE_ID,
             "reason": reason,
+            "command_response": command_response,
         }
         _write_audit(db, action, target_identifiers, summary, result_status)
 
         if not result:
-            return jsonify({"error": "Failed to assign ignore role"}), 502
+            return jsonify({
+                "error": command_response.get("error") or "Failed to assign ignore role",
+                "details": command_response,
+            }), 502
         return jsonify({"ok": True, **summary})
     finally:
         db.close()

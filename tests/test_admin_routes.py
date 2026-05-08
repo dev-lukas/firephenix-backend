@@ -216,7 +216,7 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
 
     def test_ignore_role_uses_selected_platform_id(self):
         FakeDatabase.fetchone_result = ("discord-user",)
-        stub = StubAdminValkeyManager()
+        stub = StubAdminValkeyManager({"ok": True, "result": True})
         admin_routes.valkey_manager = stub
 
         with self.make_app().test_client() as client:
@@ -232,6 +232,31 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(stub.calls, [("discord", "discord-user")])
         self.assertEqual(response.get_json()["role_id"], Config.DISCORD_EXCLUDED_ROLE_ID)
+        self.assertEqual(response.get_json()["command_response"]["ok"], True)
+        self.assertIn("INSERT INTO admin_audit_log", FakeDatabase.instances[0].cursor.queries[1][0])
+
+    def test_ignore_role_failure_returns_bot_error_details(self):
+        FakeDatabase.fetchone_result = ("teamspeak-user",)
+        stub = StubAdminValkeyManager({
+            "ok": False,
+            "error": "servergroup_add_failed",
+            "details": "insufficient client permissions",
+        })
+        admin_routes.valkey_manager = stub
+
+        with self.make_app().test_client() as client:
+            with client.session_transaction() as session:
+                session["steam_id"] = "76561198000000000"
+                session["csrf_token"] = "known-token"
+            response = client.post(
+                "/api/admin/ranking/ignore-role",
+                json={"user_id": 123, "platform": "teamspeak", "reason": "manual ignore"},
+                headers={"X-CSRF-Token": "known-token"},
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.get_json()["error"], "servergroup_add_failed")
+        self.assertEqual(response.get_json()["details"]["details"], "insufficient client permissions")
         self.assertIn("INSERT INTO admin_audit_log", FakeDatabase.instances[0].cursor.queries[1][0])
 
 

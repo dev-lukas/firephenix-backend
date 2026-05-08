@@ -325,8 +325,9 @@ class RankingSystem:
                 user_id = data.get('platform_id')
                 message_id = data.get('message_id')
                 if self.ts:
-                    result = self.ts.set_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
-                    json_data = json.dumps({'result': result})
+                    response = self.ts.set_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
+                    result = response.get('ok', False) if isinstance(response, dict) else bool(response)
+                    json_data = json.dumps({'result': result, **response} if isinstance(response, dict) else {'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
 
             elif command == 'remove_move_shield':
@@ -341,10 +342,11 @@ class RankingSystem:
                 user_id = data.get('platform_id')
                 message_id = data.get('message_id')
                 if self.ts:
-                    result = self.ts.set_server_group(user_id, int(Config.TS3_EXCLUDED_ROLE_ID))
+                    response = self.ts.set_server_group(user_id, int(Config.TS3_EXCLUDED_ROLE_ID))
+                    result = response.get('ok', False) if isinstance(response, dict) else bool(response)
                     if result:
                         self.ts.force_user_validation()
-                    json_data = json.dumps({'result': result})
+                    json_data = json.dumps({'result': result, **response} if isinstance(response, dict) else {'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
 
             elif command == 'set_apex_channel':

@@ -14,7 +14,6 @@ gameservers_bp = Blueprint('gameservers', __name__)
 valkey_manager = ValkeyManager()
 
 TTT_COMMAND_TIMEOUT_SECONDS = {
-    'status': 60,
     'restart': 240,
     'start': 240,
     'stop': 240,

@@ -8,7 +8,7 @@ from app.utils.logger import RankingLogger
 logging = RankingLogger(__name__).get_logger()
 
 class ValkeyManager:
-    ALLOWED_GAMESERVER_COMMANDS = {"status", "healthcheck", "restart", "start", "stop", "grant_season_skin"}
+    ALLOWED_GAMESERVER_COMMANDS = {"healthcheck", "restart", "start", "stop", "grant_season_skin"}
     GAMESERVER_ERROR_STATUS_CODES = {
         "invalid_reward_request": 400,
         "player_offline": 409,
@@ -97,7 +97,7 @@ class ValkeyManager:
     def set_ignore_role(self, platform: str, user_id):
         """Assign the configured ranking ignore role/group to a platform user."""
         if platform not in ('discord', 'teamspeak'):
-            return False
+            return {"ok": False, "error": "invalid_platform"}
 
         message_id = f"{platform}:ignore_role:{user_id}:{int(time.time())}"
         self.publish_command(
@@ -111,10 +111,16 @@ class ValkeyManager:
             result = self.valkey.get(message_id)
             if result:
                 self.valkey.delete(message_id)
-                return json.loads(result).get('result')
+                try:
+                    response = json.loads(result)
+                except json.JSONDecodeError:
+                    return {"ok": False, "error": "invalid_bot_response", "raw_response": result}
+                if "ok" not in response:
+                    response["ok"] = bool(response.get("result"))
+                return response
             time.sleep(1)
 
-        return False
+        return {"ok": False, "error": "bot_timeout"}
     
     def set_apex_channel(self, platform: str, channel_id):
         """Send command to set a channel as Apex and wait for response"""

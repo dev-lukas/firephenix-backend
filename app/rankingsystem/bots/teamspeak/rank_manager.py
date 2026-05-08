@@ -107,26 +107,80 @@ class RankManager:
             return None
     
     def set_server_group(self, client_id, group_id):
-        """Set a specific server group for a user"""
+        """Set a specific server group for a user and return command details."""
+        cldbid = None
+        step = "connect"
         try:
             with self.connection_manager.connect() as ts3conn:
+                step = "client_lookup"
                 db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
                 cldbid = db_info.get("cldbid")
-                
+                if not cldbid:
+                    return {"ok": False, "error": "client_dbid_missing", "details": str(db_info)}
+
+                step = "servergroup_lookup"
                 groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
                 group_ids = [int(group.get("sgid", 0)) for group in groups_info]
-                
+
                 if group_id in group_ids:
-                    return True
-                
-                ts3conn.exec_("servergroupaddclient", sgid=group_id, cldbid=cldbid)
+                    return {
+                        "ok": True,
+                        "already_present": True,
+                        "cldbid": cldbid,
+                        "group_id": group_id,
+                    }
+
+                step = "servergroup_add"
+                try:
+                    ts3conn.exec_("servergroupaddclient", sgid=group_id, cldbid=cldbid)
+                except Exception as e:
+                    try:
+                        step = "servergroup_recheck"
+                        refreshed_groups = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+                        refreshed_group_ids = [int(group.get("sgid", 0)) for group in refreshed_groups]
+                        if group_id in refreshed_group_ids:
+                            logging.info(
+                                f"TeamSpeak group {group_id} for {client_id} is present after add error; treating as success."
+                            )
+                            return {
+                                "ok": True,
+                                "already_present": True,
+                                "recovered_after_add_error": True,
+                                "cldbid": cldbid,
+                                "group_id": group_id,
+                                "details": str(e),
+                            }
+                    except Exception as refresh_error:
+                        logging.error(
+                            f"Failed to re-check TeamSpeak groups after add error for {client_id} ({cldbid}): {refresh_error}"
+                        )
+                    logging.error(f"Failed to add TeamSpeak group {group_id} for {client_id} ({cldbid}): {e}")
+                    return {
+                        "ok": False,
+                        "error": "servergroup_add_failed",
+                        "cldbid": cldbid,
+                        "group_id": group_id,
+                        "details": str(e),
+                    }
+
                 logging.debug(f"Set server group {group_id} for user {client_id}")
-                
-                return True
-                
+
+                return {
+                    "ok": True,
+                    "already_present": False,
+                    "cldbid": cldbid,
+                    "group_id": group_id,
+                }
+
         except Exception as e:
-            logging.error(f"Failed to set server group for user {client_id}: {e}")
-            return False
+            logging.error(f"Failed to set TeamSpeak group {group_id} for user {client_id} at {step}: {e}")
+            return {
+                "ok": False,
+                "error": f"{step}_failed",
+                "cldbid": cldbid,
+                "group_id": group_id,
+                "details": str(e),
+            }
         
     def remove_server_group(self, client_id, group_id):
         """Remove a specific server group from a user"""
