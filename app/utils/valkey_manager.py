@@ -87,6 +87,28 @@ class ValkeyManager:
             time.sleep(1)
             
         return False
+
+    def set_ignore_role(self, platform: str, user_id):
+        """Assign the configured ranking ignore role/group to a platform user."""
+        if platform not in ('discord', 'teamspeak'):
+            return False
+
+        message_id = f"{platform}:ignore_role:{user_id}:{int(time.time())}"
+        self.publish_command(
+            platform,
+            'add_ignore_role',
+            platform_id=user_id,
+            message_id=message_id
+        )
+
+        for _ in range(30):
+            result = self.valkey.get(message_id)
+            if result:
+                self.valkey.delete(message_id)
+                return json.loads(result).get('result')
+            time.sleep(1)
+
+        return False
     
     def set_apex_channel(self, platform: str, channel_id):
         """Send command to set a channel as Apex and wait for response"""

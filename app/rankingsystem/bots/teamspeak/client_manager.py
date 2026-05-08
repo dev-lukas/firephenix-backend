@@ -11,7 +11,7 @@ class ClientManager:
     """Manages TeamSpeak client information and tracking"""
     
     def __init__(self, config, rank_manager: RankManager):
-        self.excluded_role_id = config.TS3_EXCLUDED_ROLE_ID
+        self.excluded_role_id = int(config.TS3_EXCLUDED_ROLE_ID)
         self.connected_users = set()
         self.client_uid_map = {}
         self.client_name_map = {}

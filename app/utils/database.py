@@ -127,13 +127,28 @@ class DatabaseManager:
                     teamspeak_channel BIGINT,
                     discord_moveable BOOL DEFAULT 1,
                     teamspeak_moveable BOOL DEFAULT 1,
+                    ranking_disabled BOOLEAN DEFAULT 0,
+                    ranking_disabled_at TIMESTAMP NULL,
+                    ranking_disabled_reason VARCHAR(255) NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_steam (steam_id),
                     INDEX idx_discord (discord_id),
-                    INDEX idx_teamspeak (teamspeak_id)
+                    INDEX idx_teamspeak (teamspeak_id),
+                    INDEX idx_ranking_disabled (ranking_disabled)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
-
+            self.cursor.execute("""
+                ALTER TABLE user
+                ADD COLUMN IF NOT EXISTS ranking_disabled BOOLEAN DEFAULT 0
+            """)
+            self.cursor.execute("""
+                ALTER TABLE user
+                ADD COLUMN IF NOT EXISTS ranking_disabled_at TIMESTAMP NULL
+            """)
+            self.cursor.execute("""
+                ALTER TABLE user
+                ADD COLUMN IF NOT EXISTS ranking_disabled_reason VARCHAR(255) NULL
+            """)
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS time (
                     platform_uid VARCHAR(255) NOT NULL,
@@ -230,6 +245,20 @@ class DatabaseManager:
                     last_weekly_reset DATETIME,
                     last_monthly_reset DATETIME,
                     last_season_reset DATETIME
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS admin_audit_log (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    admin_steam_id VARCHAR(32) NOT NULL,
+                    action VARCHAR(64) NOT NULL,
+                    target_identifiers JSON,
+                    summary JSON,
+                    result_status ENUM('success', 'failed') NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_admin_audit_created (created_at),
+                    INDEX idx_admin_audit_action (action),
+                    INDEX idx_admin_audit_admin (admin_steam_id)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
             self.cursor.execute("""
@@ -365,7 +394,8 @@ class DatabaseManager:
             LEFT JOIN time t 
                 ON t.platform = 'teamspeak' 
                 AND t.platform_uid = u.teamspeak_id
-            WHERE u.{id_column} IN ({placeholders})
+            WHERE COALESCE(u.ranking_disabled, 0) = 0
+                AND u.{id_column} IN ({placeholders})
         """
         
         self.cursor.execute(query, user_ids)
@@ -411,7 +441,8 @@ class DatabaseManager:
             LEFT JOIN time t 
                 ON t.platform = 'teamspeak' 
                 AND t.platform_uid = u.teamspeak_id
-            WHERE u.{id_column} IN ({placeholders})
+            WHERE COALESCE(u.ranking_disabled, 0) = 0
+                AND u.{id_column} IN ({placeholders})
         """
         
         self.cursor.execute(query, user_ids)
@@ -451,7 +482,8 @@ class DatabaseManager:
             FROM user u
             LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
             LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
-            WHERE u.division IN (5, 6) AND u.{id_column} IS NOT NULL
+            WHERE COALESCE(u.ranking_disabled, 0) = 0
+                AND u.division IN (5, 6) AND u.{id_column} IS NOT NULL
             ORDER BY season_time DESC
             LIMIT {Config.TOP_DIVISION_PLAYER_AMOUNT * 2}
         """)
@@ -522,6 +554,7 @@ class DatabaseManager:
             SELECT level, division
             FROM user
             WHERE {id_column} = ?
+                AND COALESCE(ranking_disabled, 0) = 0
         """
         self.cursor.execute(query, (str(user_id),))
         
@@ -631,7 +664,8 @@ class DatabaseManager:
                 LEFT JOIN time t
                     ON t.platform = 'teamspeak'
                     AND t.platform_uid = u.teamspeak_id
-                WHERE COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) > 0
+                WHERE COALESCE(u.ranking_disabled, 0) = 0
+                    AND COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) > 0
                 ORDER BY season_time DESC, u.id ASC
             """)
             participants = self.cursor.fetchall()

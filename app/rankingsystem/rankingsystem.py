@@ -256,6 +256,23 @@ class RankingSystem:
                         ex=30
                     )
 
+            elif command == 'add_ignore_role':
+                user_id = data.get('platform_id')
+                message_id = data.get('message_id')
+                if self.dc:
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.dc.set_user_group(int(user_id), int(Config.DISCORD_EXCLUDED_ROLE_ID)),
+                        self.dc.bot.loop
+                    ).result()
+                    if result and self.dc.time_tracker:
+                        self.dc.time_tracker.remove_tracked_user(int(user_id))
+
+                    self.valkey.set(
+                        message_id,
+                        json.dumps({'result': result}),
+                        ex=30
+                    )
+
             elif command == 'set_apex_channel':
                 channel_id = data.get('channel_id')
                 message_id = data.get('message_id')
@@ -320,6 +337,16 @@ class RankingSystem:
                     json_data = json.dumps({'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
 
+            elif command == 'add_ignore_role':
+                user_id = data.get('platform_id')
+                message_id = data.get('message_id')
+                if self.ts:
+                    result = self.ts.set_server_group(user_id, int(Config.TS3_EXCLUDED_ROLE_ID))
+                    if result:
+                        self.ts.force_user_validation()
+                    json_data = json.dumps({'result': result})
+                    self.valkey.set(message_id, json_data, ex=30)
+
             elif command == 'set_apex_channel':
                 channel_id = data.get('channel_id')
                 message_id = data.get('message_id')
@@ -330,5 +357,3 @@ class RankingSystem:
 
         except Exception as e:
             logging.error(f"Error handling TeamSpeak command: {e}")
-
-

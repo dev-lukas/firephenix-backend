@@ -40,6 +40,7 @@ class ClientManager(commands.Cog):
         self.bot = bot
         self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
         self.database = DatabaseManager()
+        self.excluded_role_id = int(Config.DISCORD_EXCLUDED_ROLE_ID)
         self.connected_users = set()
         self.user_name_map = {}
         self.scan_voice_channels_task.start()
@@ -156,11 +157,17 @@ class ClientManager(commands.Cog):
         current_voice_users = set()
         for voice_channel in self.guild.voice_channels:
             for member in voice_channel.members:
-                if not member.bot:  # Ignore bots
-                    current_voice_users.add(member.id)
-                    if member.id not in self.user_name_map or self.user_name_map[member.id] != member.display_name:
-                        self.user_name_map[member.id] = member.display_name
-                        logging.debug(f"Updated username for {member.id}: {member.display_name}")
+                if member.bot:
+                    continue
+                if discord.utils.get(member.roles, id=self.excluded_role_id):
+                    self.remove_tracked_user(member.id)
+                    logging.debug(f"Excluding Discord voice user {member.id} due to excluded role.")
+                    continue
+
+                current_voice_users.add(member.id)
+                if member.id not in self.user_name_map or self.user_name_map[member.id] != member.display_name:
+                    self.user_name_map[member.id] = member.display_name
+                    logging.debug(f"Updated username for {member.id}: {member.display_name}")
 
         users_to_add = current_voice_users - self.connected_users
         for user_id in users_to_add:
@@ -182,6 +189,11 @@ class ClientManager(commands.Cog):
                 f"Periodic voice channel scan complete. No changes. Total connected: {len(self.connected_users)}"
             )
 
+    def remove_tracked_user(self, user_id):
+        """Remove a user from in-memory tracking."""
+        self.connected_users.discard(user_id)
+        self.user_name_map.pop(user_id, None)
+
     async def check_default_roles(self):
         """Check all members for rank roles and gives user the base role if none present"""
         await self.bot.wait_until_ready()
@@ -195,7 +207,7 @@ class ClientManager(commands.Cog):
             async for member in self.guild.fetch_members():
                 if (
                     not discord.utils.get(
-                        member.roles, id=Config.DISCORD_EXCLUDED_ROLE_ID
+                        member.roles, id=self.excluded_role_id
                     )
                     and not member.bot
                 ):
@@ -254,7 +266,7 @@ class ClientManager(commands.Cog):
         try:
             if before.channel is None and after.channel is not None:
                 if not discord.utils.get(
-                    member.roles, id=Config.DISCORD_EXCLUDED_ROLE_ID
+                    member.roles, id=self.excluded_role_id
                 ):
                     self.connected_users.add(member.id)
                     self.user_name_map[member.id] = member.display_name
@@ -262,7 +274,7 @@ class ClientManager(commands.Cog):
 
             elif before.channel is not None and after.channel is None:
                 if not discord.utils.get(
-                    member.roles, id=Config.DISCORD_EXCLUDED_ROLE_ID
+                    member.roles, id=self.excluded_role_id
                 ):
                     self.connected_users.remove(member.id)
                     self.user_name_map.pop(member.id, None)

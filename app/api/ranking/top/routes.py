@@ -31,7 +31,8 @@ def get_top_ranking():
     LEFT JOIN time AS teamspeak_time 
         ON user.teamspeak_id = teamspeak_time.platform_uid 
         AND teamspeak_time.platform = 'teamspeak'
-    WHERE (COALESCE(discord_time.{time_column}, 0) + 
+    WHERE COALESCE(user.ranking_disabled, 0) = 0
+        AND (COALESCE(discord_time.{time_column}, 0) +
             COALESCE(teamspeak_time.{time_column}, 0)) > 0
     ORDER BY minutes DESC
     LIMIT 10
@@ -69,6 +70,7 @@ def get_hall_of_fame():
         INNER JOIN login_streak ls ON
             (ls.platform='discord' AND ls.platform_uid=u.discord_id) OR
             (ls.platform='teamspeak' AND ls.platform_uid=u.teamspeak_id)
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
         GROUP BY u.id, u.name, u.level
         ORDER BY val DESC LIMIT 3
     """)
@@ -79,6 +81,7 @@ def get_hall_of_fame():
         INNER JOIN login_streak ls ON
             (ls.platform='discord' AND ls.platform_uid=u.discord_id) OR
             (ls.platform='teamspeak' AND ls.platform_uid=u.teamspeak_id)
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
         GROUP BY u.id, u.name, u.level
         ORDER BY val DESC LIMIT 3
     """)
@@ -111,7 +114,8 @@ def get_hall_of_fame():
         LEFT JOIN time t ON
             (t.platform='discord' AND t.platform_uid=u.discord_id) OR
             (t.platform='teamspeak' AND t.platform_uid=u.teamspeak_id)
-        WHERE u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
+            AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
         GROUP BY u.id, u.name, u.level, u.discord_id, u.teamspeak_id
     """
     ach_rows = db.execute_query(ach_query) or []
@@ -169,7 +173,8 @@ def get_hall_of_fame():
         INNER JOIN activity_heatmap ah ON
             (ah.platform='discord' AND ah.platform_uid=u.discord_id) OR
             (ah.platform='teamspeak' AND ah.platform_uid=u.teamspeak_id)
-        WHERE ah.activity_minutes > 0
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
+            AND ah.activity_minutes > 0
         GROUP BY u.id, u.name, u.level
         ORDER BY val DESC LIMIT 3
     """)
@@ -178,7 +183,8 @@ def get_hall_of_fame():
         SELECT u.id, COALESCE(u.name,'Unknown'), u.level,
             DATEDIFF(CURDATE(), DATE(u.created_at)) as val
         FROM user u
-        WHERE u.created_at IS NOT NULL
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
+            AND u.created_at IS NOT NULL
         ORDER BY u.created_at ASC LIMIT 3
     """)
 
@@ -188,7 +194,8 @@ def get_hall_of_fame():
         INNER JOIN login_streak ls ON
             (ls.platform='discord' AND ls.platform_uid=u.discord_id) OR
             (ls.platform='teamspeak' AND ls.platform_uid=u.teamspeak_id)
-        WHERE ls.last_login >= CURDATE() - INTERVAL 1 DAY
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
+            AND ls.last_login >= CURDATE() - INTERVAL 1 DAY
         GROUP BY u.id, u.name, u.level
         ORDER BY val DESC LIMIT 3
     """)

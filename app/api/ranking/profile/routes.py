@@ -25,7 +25,8 @@ def get_ranking():
         FROM user u
         LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
-        WHERE COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) > 0
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
+            AND COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) > 0
     ),
     ranked_users AS (
         SELECT 
@@ -47,6 +48,7 @@ def get_ranking():
         FROM user u
         LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
+        WHERE COALESCE(u.ranking_disabled, 0) = 0
     )
     SELECT 
         r.*,
@@ -111,6 +113,7 @@ def get_ranking():
             OR (h.platform = 'teamspeak' AND h.platform_uid = u.teamspeak_id)
     WHERE u.id = ?
         AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
+        AND COALESCE(u.ranking_disabled, 0) = 0
     GROUP BY h.day_of_week, h.time_category
     ORDER BY h.day_of_week, 
         CASE h.time_category 
@@ -151,6 +154,7 @@ def get_ranking():
         LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
         LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
         WHERE u.division = 6
+            AND COALESCE(u.ranking_disabled, 0) = 0
         """
         db.cursor.execute(div6_query)
         div6_count, lowest_div6_time = db.cursor.fetchone()

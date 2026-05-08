@@ -33,7 +33,8 @@ def get_ranking():
         LEFT JOIN time AS teamspeak_time 
             ON user.teamspeak_id = teamspeak_time.platform_uid 
             AND teamspeak_time.platform = 'teamspeak'
-        WHERE (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) > 0
+        WHERE COALESCE(user.ranking_disabled, 0) = 0
+            AND (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) > 0
     """
 
     query = """
@@ -57,7 +58,8 @@ def get_ranking():
         LEFT JOIN time AS teamspeak_time 
             ON user.teamspeak_id = teamspeak_time.platform_uid 
             AND teamspeak_time.platform = 'teamspeak'
-        WHERE (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) > 0
+        WHERE COALESCE(user.ranking_disabled, 0) = 0
+            AND (COALESCE(discord_time.season_time, 0) + COALESCE(teamspeak_time.season_time, 0)) > 0
         """
     
     params = []

@@ -18,6 +18,7 @@ def get_stats():
         COUNT(DISTINCT user.discord_id) as total_discord_users,
         COUNT(DISTINCT user.teamspeak_id) as total_teamspeak_users
     FROM user
+    WHERE COALESCE(ranking_disabled, 0) = 0
     """
     
     result = db.execute_query(query)
@@ -27,12 +28,12 @@ def get_stats():
         total_users, total_discord_users, total_teamspeak_users = 0, 0, 0
 
     # Query for users per rank (level)
-    query_ranks = "SELECT level, COUNT(*) as count FROM user GROUP BY level"
+    query_ranks = "SELECT level, COUNT(*) as count FROM user WHERE COALESCE(ranking_disabled, 0) = 0 GROUP BY level"
     result_ranks = db.execute_query(query_ranks)
     users_per_rank = {row[0]: row[1] for row in result_ranks} if result_ranks else {}
 
     # Query for users per division
-    query_divisions = "SELECT division, COUNT(*) as count FROM user GROUP BY division"
+    query_divisions = "SELECT division, COUNT(*) as count FROM user WHERE COALESCE(ranking_disabled, 0) = 0 GROUP BY division"
     result_divisions = db.execute_query(query_divisions)
     users_per_division = {row[0]: row[1] for row in result_divisions} if result_divisions else {}
 

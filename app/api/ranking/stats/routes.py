@@ -24,8 +24,11 @@ def get_stats():
     LEFT JOIN time AS teamspeak_time 
         ON user.teamspeak_id = teamspeak_time.platform_uid 
         AND teamspeak_time.platform = 'teamspeak'
-    WHERE discord_time.platform_uid IS NOT NULL 
-        OR teamspeak_time.platform_uid IS NOT NULL
+    WHERE COALESCE(user.ranking_disabled, 0) = 0
+        AND (
+            discord_time.platform_uid IS NOT NULL
+            OR teamspeak_time.platform_uid IS NOT NULL
+        )
     """
     
     result = db.execute_query(users_time_query)
@@ -40,6 +43,10 @@ def get_stats():
         day_of_week, 
         SUM(activity_minutes) as total_activity
     FROM activity_heatmap
+    INNER JOIN user u ON
+        (activity_heatmap.platform = 'discord' AND activity_heatmap.platform_uid = u.discord_id) OR
+        (activity_heatmap.platform = 'teamspeak' AND activity_heatmap.platform_uid = u.teamspeak_id)
+    WHERE COALESCE(u.ranking_disabled, 0) = 0
     GROUP BY day_of_week
     ORDER BY total_activity DESC
     LIMIT 1
@@ -55,6 +62,10 @@ def get_stats():
     total_logins_query = """
     SELECT SUM(logins) as total_logins
     FROM login_streak
+    INNER JOIN user u ON
+        (login_streak.platform = 'discord' AND login_streak.platform_uid = u.discord_id) OR
+        (login_streak.platform = 'teamspeak' AND login_streak.platform_uid = u.teamspeak_id)
+    WHERE COALESCE(u.ranking_disabled, 0) = 0
     """
     
     logins_result = db.execute_query(total_logins_query)

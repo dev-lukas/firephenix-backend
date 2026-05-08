@@ -27,6 +27,7 @@ def get_achievements():
             (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
             (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
         WHERE u.id = ?
+            AND COALESCE(u.ranking_disabled, 0) = 0
         GROUP BY u.discord_id, u.teamspeak_id
     """
 
@@ -77,6 +78,7 @@ def get_achievements():
                 OR (h.platform = 'teamspeak' AND h.platform_uid = u.teamspeak_id)
         WHERE u.id = ?
             AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
+            AND COALESCE(u.ranking_disabled, 0) = 0
         GROUP BY h.day_of_week, h.time_category
         ORDER BY h.day_of_week, 
             CASE h.time_category 

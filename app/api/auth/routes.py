@@ -73,7 +73,8 @@ def check_auth():
     response = jsonify({
         'authenticated': 'steam_id' in session,
         'steam_id': session.get('steam_id'),
-        'csrf_token': session.get('csrf_token') if 'steam_id' in session else None
+        'csrf_token': session.get('csrf_token') if 'steam_id' in session else None,
+        'is_admin': str(session.get('steam_id')) in Config.ADMIN_STEAM_IDS if 'steam_id' in session else False
     })
 
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
