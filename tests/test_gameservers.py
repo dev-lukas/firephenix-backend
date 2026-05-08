@@ -5,6 +5,7 @@ from flask import Flask, jsonify
 
 from app.api.gameservers import routes as gameserver_routes
 from app.config import Config, parse_admin_steam_ids
+from app.utils.source_server import SourceServerQueryError, SourceServerTimeout
 from app.utils.security import admin_required
 from app.utils.valkey_manager import ValkeyManager
 
@@ -198,6 +199,7 @@ class GameServerRouteTests(unittest.TestCase):
     def setUp(self):
         self.original_admins = Config.ADMIN_STEAM_IDS
         self.original_manager = gameserver_routes.valkey_manager
+        self.original_query_source_server = gameserver_routes.query_source_server
         Config.ADMIN_STEAM_IDS = ["76561198000000000"]
 
         class StubManager:
@@ -209,10 +211,22 @@ class GameServerRouteTests(unittest.TestCase):
                 return {"ok": True, "server": server_id, "command": command}, 200
 
         gameserver_routes.valkey_manager = StubManager()
+        gameserver_routes.query_source_server = lambda host, port, timeout_seconds=2: {
+            "ok": True,
+            "status": "online",
+            "server": "ttt",
+            "map": "ttt_rooftops",
+            "current_map": "ttt_rooftops",
+            "players": {"current": 4, "max": 16, "bots": 0},
+            "current_players": 4,
+            "max_players": 16,
+            "manager_state": "nicht abgefragt",
+        }
 
     def tearDown(self):
         Config.ADMIN_STEAM_IDS = self.original_admins
         gameserver_routes.valkey_manager = self.original_manager
+        gameserver_routes.query_source_server = self.original_query_source_server
 
     def make_app(self):
         app = Flask(__name__)
@@ -220,29 +234,42 @@ class GameServerRouteTests(unittest.TestCase):
         app.register_blueprint(gameserver_routes.gameservers_bp)
         return app
 
-    def test_status_rejects_unauthenticated(self):
+    def test_status_is_public_and_queries_source_server(self):
         with self.make_app().test_client() as client:
-            response = client.get("/api/gameservers/ttt/status")
-
-        self.assertEqual(response.status_code, 401)
-
-    def test_status_rejects_non_admin(self):
-        with self.make_app().test_client() as client:
-            with client.session_transaction() as session:
-                session["steam_id"] = "76561198000000001"
-            response = client.get("/api/gameservers/ttt/status")
-
-        self.assertEqual(response.status_code, 403)
-
-    def test_status_allows_admin(self):
-        with self.make_app().test_client() as client:
-            with client.session_transaction() as session:
-                session["steam_id"] = "76561198000000000"
             response = client.get("/api/gameservers/ttt/status")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["command"], "status")
-        self.assertEqual(gameserver_routes.valkey_manager.calls[0][3]["timeout_seconds"], 60)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "online")
+        self.assertEqual(payload["current_map"], "ttt_rooftops")
+        self.assertEqual(payload["players"]["current"], 4)
+        self.assertEqual(gameserver_routes.valkey_manager.calls, [])
+
+    def test_status_timeout_returns_offline(self):
+        def timeout_query(host, port, timeout_seconds=2):
+            raise SourceServerTimeout("source_query_timeout")
+
+        gameserver_routes.query_source_server = timeout_query
+
+        with self.make_app().test_client() as client:
+            response = client.get("/api/gameservers/ttt/status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "offline")
+        self.assertEqual(response.get_json()["error"], "source_query_timeout")
+
+    def test_status_query_error_returns_unknown(self):
+        def error_query(host, port, timeout_seconds=2):
+            raise SourceServerQueryError("invalid_info_response")
+
+        gameserver_routes.query_source_server = error_query
+
+        with self.make_app().test_client() as client:
+            response = client.get("/api/gameservers/ttt/status")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "unknown")
+        self.assertEqual(response.get_json()["error"], "invalid_info_response")
 
     def test_restart_requires_csrf_for_admin(self):
         with self.make_app().test_client() as client:

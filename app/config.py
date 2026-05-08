@@ -63,6 +63,11 @@ class Config:
     VALKEY_PORT = int(os.getenv("VALKEY_PORT", "6379"))
     VALKEY_DB = 0
     VALKEY_UPDATE_INTERVAL = 2
+    # Public Source server status query. This is intentionally read-only and
+    # does not use RCON credentials.
+    TTT_STATUS_HOST = os.getenv("TTT_STATUS_HOST", "firephenix.de")
+    TTT_STATUS_PORT = int(os.getenv("TTT_STATUS_PORT", "27015"))
+    TTT_STATUS_TIMEOUT_SECONDS = float(os.getenv("TTT_STATUS_TIMEOUT_SECONDS", "2"))
     TTT_SEASON_REWARD_ITEM_UUIDS = {
         2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
         3: "36648F60-EA1F-449A-94AD-98914B3BF8AC",

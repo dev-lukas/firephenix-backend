@@ -1,6 +1,12 @@
 from flask import Blueprint, jsonify
 
 from app.utils.security import admin_required, csrf_required, handle_errors
+from app.config import Config
+from app.utils.source_server import (
+    SourceServerQueryError,
+    SourceServerTimeout,
+    query_source_server,
+)
 from app.utils.valkey_manager import ValkeyManager
 
 
@@ -25,10 +31,38 @@ def run_ttt_command(command: str):
 
 
 @gameservers_bp.route('/api/gameservers/ttt/status')
-@admin_required
 @handle_errors
 def ttt_status():
-    return run_ttt_command('status')
+    try:
+        payload = query_source_server(
+            Config.TTT_STATUS_HOST,
+            Config.TTT_STATUS_PORT,
+            timeout_seconds=Config.TTT_STATUS_TIMEOUT_SECONDS,
+        )
+        return jsonify({
+            **payload,
+            "server": "ttt",
+            "host": Config.TTT_STATUS_HOST,
+            "port": Config.TTT_STATUS_PORT,
+        })
+    except SourceServerTimeout:
+        return jsonify({
+            "ok": False,
+            "status": "offline",
+            "error": "source_query_timeout",
+            "server": "ttt",
+            "host": Config.TTT_STATUS_HOST,
+            "port": Config.TTT_STATUS_PORT,
+        })
+    except SourceServerQueryError as error:
+        return jsonify({
+            "ok": False,
+            "status": "unknown",
+            "error": str(error),
+            "server": "ttt",
+            "host": Config.TTT_STATUS_HOST,
+            "port": Config.TTT_STATUS_PORT,
+        })
 
 
 @gameservers_bp.route('/api/gameservers/ttt/restart', methods=['POST'])
