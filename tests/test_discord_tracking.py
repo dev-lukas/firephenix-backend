@@ -3,12 +3,26 @@ import types
 import unittest
 
 from app.config import Config
+from app.rankingsystem.bots.discord import bot as discord_bot_module
+from app.rankingsystem.bots.discord.bot import DiscordBot
 from app.rankingsystem.bots.discord.client_manager import ClientManager
 
 
 class FakeBot:
     async def wait_until_ready(self):
         return None
+
+
+class FakeDiscordClient:
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        self.events = {}
+        FakeDiscordClient.instances.append(self)
+
+    def event(self, func):
+        self.events[func.__name__] = func
+        return func
 
 
 class DiscordVoiceScanTests(unittest.TestCase):
@@ -47,6 +61,22 @@ class DiscordVoiceScanTests(unittest.TestCase):
             self.assertEqual(manager.user_name_map[2], "Normal")
         finally:
             Config.DISCORD_EXCLUDED_ROLE_ID = original_excluded_role_id
+
+    def test_discord_bot_creates_fresh_client_instances(self):
+        original_bot = discord_bot_module.commands.Bot
+        FakeDiscordClient.instances = []
+        discord_bot_module.commands.Bot = FakeDiscordClient
+        try:
+            bot = DiscordBot()
+            first = bot.create_bot()
+            second = bot.create_bot()
+        finally:
+            discord_bot_module.commands.Bot = original_bot
+
+        self.assertIsNot(first, second)
+        self.assertEqual(len(FakeDiscordClient.instances), 2)
+        self.assertIn("on_ready", first.events)
+        self.assertIn("on_ready", second.events)
 
 
 if __name__ == "__main__":

@@ -11,56 +11,58 @@ logging = RankingLogger(__name__).get_logger()
 
 
 class DiscordBot:
-    _instance = None
+    BASE_RECONNECT_DELAY = 5
+    MAX_RECONNECT_DELAY = 300
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(DiscordBot, cls).__new__(cls)
-        return cls._instance
-    
     def __init__(self):
-        if not hasattr(self, 'initialized'):
-            self.initialized = True
-            self.token = Config.DISCORD_TOKEN
-            
-            self.intents = discord.Intents.default()
-            self.intents.voice_states = True
-            self.intents.message_content = True
-            self.intents.members = True
+        self.token = Config.DISCORD_TOKEN
+        self.intents = discord.Intents.default()
+        self.intents.voice_states = True
+        self.intents.message_content = True
+        self.intents.members = True
+        self.bot = None
+        self.time_tracker = None
+        self.running = True
 
-            self.bot = commands.Bot(command_prefix='!', intents=self.intents)
-            self.time_tracker = None
+    def create_bot(self):
+        bot = commands.Bot(command_prefix='!', intents=self.intents)
 
-            self.setup_events()
-
-    def setup_events(self):
-        @self.bot.event
+        @bot.event
         async def on_ready():
-            self.time_tracker = ClientManager(self.bot)
+            self.time_tracker = ClientManager(bot)
             try:
-                await self.bot.add_cog(self.time_tracker)
+                await bot.add_cog(self.time_tracker)
             except discord.errors.ClientException:
                 logging.error("ClientException: Cog already loaded")
 
+        return bot
+
     def run(self):
-        while True:
+        reconnect_delay = self.BASE_RECONNECT_DELAY
+        while self.running:
+            self.time_tracker = None
+            self.bot = self.create_bot()
             try:
                 self.bot.run(self.token)
+                reconnect_delay = self.BASE_RECONNECT_DELAY
             except discord.errors.ConnectionClosed:
-                logging.error("Connection to Discord lost. Reconnecting in 5 seconds.")
-                time.sleep(5)
+                logging.error("Connection to Discord lost.")
             except discord.errors.GatewayNotFound:
-                logging.error("Gateway not found. Reconnecting in 30 seconds.")
-                time.sleep(30)
+                logging.error("Discord gateway not found.")
             except asyncio.TimeoutError:
-                logging.error("Discord connection timed out. Reconnecting in 10 seconds.")
-                time.sleep(10)
+                logging.error("Discord connection timed out.")
             except asyncio.CancelledError:
-                logging.error("Discord connection cancelled. Reconnecting in 10 seconds.")
-                time.sleep(10)
+                logging.error("Discord connection cancelled.")
             except Exception as e:
                 logging.error(f"Error running the bot: {e}")
-                time.sleep(60)
+            finally:
+                self.time_tracker = None
+                self.bot = None
+
+            if self.running:
+                logging.info(f"Recreating Discord session in {reconnect_delay} seconds.")
+                time.sleep(reconnect_delay)
+                reconnect_delay = min(self.MAX_RECONNECT_DELAY, reconnect_delay * 2)
 
     def get_online_users(self):
         if self.time_tracker:
@@ -94,3 +96,6 @@ class DiscordBot:
     async def move_channel_apex(self, channel_id: int) -> bool:
         """Move a channel to a new location"""
         return await move_channel_apex(self.bot, channel_id)
+
+    def stop(self):
+        self.running = False

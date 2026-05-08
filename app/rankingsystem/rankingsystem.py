@@ -153,6 +153,8 @@ class RankingSystem:
         self.running = False
         if self.ts:
             self.ts.stop()
+        if self.dc:
+            self.dc.stop()
         if self.pubsub_thread:
             self.pubsub_thread.stop()
         try:
