@@ -7,9 +7,20 @@ from app.utils.valkey_manager import ValkeyManager
 gameservers_bp = Blueprint('gameservers', __name__)
 valkey_manager = ValkeyManager()
 
+TTT_COMMAND_TIMEOUT_SECONDS = {
+    'status': 60,
+    'restart': 240,
+    'start': 240,
+    'stop': 240,
+}
+
 
 def run_ttt_command(command: str):
-    payload, status_code = valkey_manager.gameserver_command('ttt', command)
+    payload, status_code = valkey_manager.gameserver_command(
+        'ttt',
+        command,
+        timeout_seconds=TTT_COMMAND_TIMEOUT_SECONDS.get(command, 3),
+    )
     return jsonify(payload), status_code
 
 

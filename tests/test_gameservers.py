@@ -186,7 +186,11 @@ class GameServerRouteTests(unittest.TestCase):
         Config.ADMIN_STEAM_IDS = ["76561198000000000"]
 
         class StubManager:
-            def gameserver_command(self, server_id, command):
+            def __init__(self):
+                self.calls = []
+
+            def gameserver_command(self, server_id, command, data=None, **kwargs):
+                self.calls.append((server_id, command, data, kwargs))
                 return {"ok": True, "server": server_id, "command": command}, 200
 
         gameserver_routes.valkey_manager = StubManager()
@@ -223,6 +227,7 @@ class GameServerRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["command"], "status")
+        self.assertEqual(gameserver_routes.valkey_manager.calls[0][3]["timeout_seconds"], 60)
 
     def test_restart_requires_csrf_for_admin(self):
         with self.make_app().test_client() as client:
@@ -236,6 +241,7 @@ class GameServerRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["command"], "restart")
+        self.assertEqual(gameserver_routes.valkey_manager.calls[0][3]["timeout_seconds"], 240)
 
 
 if __name__ == "__main__":

@@ -55,8 +55,8 @@ class StubValkeyManager:
         self.response = response or ({"ok": True}, 200)
         self.calls = []
 
-    def gameserver_command(self, server_id, command, data=None):
-        self.calls.append((server_id, command, data))
+    def gameserver_command(self, server_id, command, data=None, **kwargs):
+        self.calls.append((server_id, command, data, kwargs))
         return self.response
 
 
@@ -199,6 +199,7 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         self.assertEqual(payload["steam_id64"], "76561198000000000")
         self.assertEqual(payload["steam_id2"], "STEAM_0:0:19867136")
         self.assertEqual(payload["item_uuid"], Config.TTT_SEASON_REWARD_ITEM_UUIDS[2])
+        self.assertEqual(stub.calls[0][3]["timeout_seconds"], 25)
         self.assertIn("INSERT INTO admin_audit_log", FakeDatabase.instances[0].cursor.queries[0][0])
 
     def test_season_skin_validation_writes_failed_audit(self):
