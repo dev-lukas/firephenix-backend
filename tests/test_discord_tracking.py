@@ -134,6 +134,34 @@ class DiscordVoiceScanTests(unittest.TestCase):
             else:
                 discord_logger._firephenix_configured = original_configured
 
+    def test_discord_library_logger_adds_handler_when_null_handler_exists(self):
+        discord_logger = python_logging.getLogger("discord")
+        original_handlers = list(discord_logger.handlers)
+        original_configured = getattr(discord_logger, "_firephenix_configured", None)
+
+        try:
+            null_handler = python_logging.NullHandler()
+            discord_logger.handlers[:] = [null_handler]
+            if hasattr(discord_logger, "_firephenix_configured"):
+                delattr(discord_logger, "_firephenix_configured")
+
+            DiscordBot()
+
+            self.assertIn(null_handler, discord_logger.handlers)
+            self.assertTrue(
+                any(
+                    getattr(handler, discord_bot_module.DISCORD_LOG_HANDLER_MARKER, False)
+                    for handler in discord_logger.handlers
+                )
+            )
+        finally:
+            discord_logger.handlers[:] = original_handlers
+            if original_configured is None:
+                if hasattr(discord_logger, "_firephenix_configured"):
+                    delattr(discord_logger, "_firephenix_configured")
+            else:
+                discord_logger._firephenix_configured = original_configured
+
 
 if __name__ == "__main__":
     unittest.main()

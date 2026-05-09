@@ -101,7 +101,8 @@ def verify_code():
         
         db.cursor.execute("""
             SELECT id, steam_id, discord_id, teamspeak_id, name, level, division,
-                   discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable
+                   discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable,
+                   COALESCE(ranking_disabled, 0), ranking_disabled_at, ranking_disabled_reason
             FROM user
             WHERE steam_id = ?
         """, (steam_id,))
@@ -119,11 +120,15 @@ def verify_code():
             primary_id = primary_user[0]
             
             db.cursor.execute(f"""
-                SELECT level, division, discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable
+                SELECT level, division, discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable,
+                       COALESCE(ranking_disabled, 0), ranking_disabled_at, ranking_disabled_reason
                 FROM user
                 WHERE {platform}_id = ?
             """, (platform_id,))
             user_to_merge = db.cursor.fetchall()
+            primary_ranking_disabled = bool(primary_user[11])
+            primary_ranking_disabled_at = primary_user[12]
+            primary_ranking_disabled_reason = primary_user[13]
             
             if user_to_merge:
                 merge_level = user_to_merge[0][0] or 1
@@ -132,6 +137,9 @@ def verify_code():
                 merge_teamspeak_channel = user_to_merge[0][3]
                 merge_discord_moveable = user_to_merge[0][4]
                 merge_teamspeak_moveable = user_to_merge[0][5]
+                merge_ranking_disabled = bool(user_to_merge[0][6])
+                merge_ranking_disabled_at = user_to_merge[0][7]
+                merge_ranking_disabled_reason = user_to_merge[0][8]
                 
                 primary_level = primary_user[5] or 1  
                 primary_division = primary_user[6] or 1
@@ -148,12 +156,23 @@ def verify_code():
                 final_discord_moveable = merge_discord_moveable if merge_discord_moveable is True else primary_discord_moveable
                 final_teamspeak_moveable = merge_teamspeak_moveable if merge_teamspeak_moveable is True else primary_teamspeak_moveable
             else:
+                merge_ranking_disabled = False
+                merge_ranking_disabled_at = None
+                merge_ranking_disabled_reason = None
                 max_level = primary_user[5] or 1
                 max_division = primary_user[6] or 1
                 final_discord_channel = primary_user[7]
                 final_teamspeak_channel = primary_user[8]
                 final_discord_moveable = primary_user[9]
                 final_teamspeak_moveable = primary_user[10]
+
+            final_ranking_disabled = primary_ranking_disabled or merge_ranking_disabled
+            final_ranking_disabled_at = primary_ranking_disabled_at or merge_ranking_disabled_at
+            final_ranking_disabled_reason = (
+                primary_ranking_disabled_reason
+                or merge_ranking_disabled_reason
+                or ("Merged with ranking-disabled account" if final_ranking_disabled else None)
+            )
             
             db.cursor.execute(f"""
                 DELETE FROM user
@@ -169,11 +188,20 @@ def verify_code():
                     discord_channel = ?,
                     teamspeak_channel = ?,
                     discord_moveable = ?,
-                    teamspeak_moveable = ?
+                    teamspeak_moveable = ?,
+                    ranking_disabled = ?,
+                    ranking_disabled_at = CASE
+                        WHEN ? = 1 THEN COALESCE(?, ranking_disabled_at, CURRENT_TIMESTAMP)
+                        ELSE NULL
+                    END,
+                    ranking_disabled_reason = ?
                 WHERE id = ?
             """, (steam_id, platform_id, max_level, max_division, 
                   final_discord_channel, final_teamspeak_channel, 
-                  final_discord_moveable, final_teamspeak_moveable, primary_id))
+                  final_discord_moveable, final_teamspeak_moveable,
+                  int(final_ranking_disabled), int(final_ranking_disabled),
+                  final_ranking_disabled_at, final_ranking_disabled_reason,
+                  primary_id))
 
         db.conn.commit()
         db.close()

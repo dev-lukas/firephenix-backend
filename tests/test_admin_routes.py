@@ -233,7 +233,15 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         self.assertEqual(stub.calls, [("discord", "discord-user")])
         self.assertEqual(response.get_json()["role_id"], Config.DISCORD_EXCLUDED_ROLE_ID)
         self.assertEqual(response.get_json()["command_response"]["ok"], True)
-        self.assertIn("INSERT INTO admin_audit_log", FakeDatabase.instances[0].cursor.queries[1][0])
+        queries = FakeDatabase.instances[0].cursor.queries
+        self.assertTrue(
+            any("SET ranking_disabled = 1" in query for query, _ in queries)
+        )
+        self.assertTrue(
+            any(params == ("manual ignore", 123) for _, params in queries if params)
+        )
+        self.assertIn("INSERT INTO admin_audit_log", queries[-1][0])
+        self.assertTrue(response.get_json()["ranking_disabled"])
 
     def test_ignore_role_failure_returns_bot_error_details(self):
         FakeDatabase.fetchone_result = ("teamspeak-user",)
@@ -257,7 +265,9 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.get_json()["error"], "servergroup_add_failed")
         self.assertEqual(response.get_json()["details"]["details"], "insufficient client permissions")
-        self.assertIn("INSERT INTO admin_audit_log", FakeDatabase.instances[0].cursor.queries[1][0])
+        queries = FakeDatabase.instances[0].cursor.queries
+        self.assertFalse(any("SET ranking_disabled = 1" in query for query, _ in queries))
+        self.assertIn("INSERT INTO admin_audit_log", queries[-1][0])
 
 
 if __name__ == "__main__":

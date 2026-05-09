@@ -536,13 +536,23 @@ def assign_ignore_role():
             "reason": reason,
             "command_response": command_response,
         }
-        _write_audit(db, action, target_identifiers, summary, result_status)
 
         if not result:
+            _write_audit(db, action, target_identifiers, summary, result_status)
             return jsonify({
                 "error": command_response.get("error") or "Failed to assign ignore role",
                 "details": command_response,
             }), 502
+
+        db.cursor.execute("""
+            UPDATE user
+            SET ranking_disabled = 1,
+                ranking_disabled_at = CURRENT_TIMESTAMP,
+                ranking_disabled_reason = ?
+            WHERE id = ?
+        """, (reason[:255], user_id))
+        summary["ranking_disabled"] = True
+        _write_audit(db, action, target_identifiers, summary, result_status)
         return jsonify({"ok": True, **summary})
     finally:
         db.close()

@@ -9,6 +9,7 @@ from app.rankingsystem.bots.discord.client_manager import ClientManager
 from app.rankingsystem.bots.discord.utils import set_ranks, send_verification, create_owned_channel, set_user_group, remove_user_group, move_channel_apex
 
 logging = RankingLogger(__name__).get_logger()
+DISCORD_LOG_HANDLER_MARKER = "_firephenix_discord_handler"
 
 
 def configure_discord_library_logging():
@@ -19,8 +20,9 @@ def configure_discord_library_logging():
     if getattr(discord_logger, "_firephenix_configured", False):
         return
 
-    if not discord_logger.handlers:
+    if not any(getattr(handler, DISCORD_LOG_HANDLER_MARKER, False) for handler in discord_logger.handlers):
         handler = python_logging.StreamHandler()
+        setattr(handler, DISCORD_LOG_HANDLER_MARKER, True)
         handler.setFormatter(
             python_logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         )
