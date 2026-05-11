@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 
 from flask import Flask
 
@@ -22,15 +23,18 @@ class FakeConnection:
 class FakeCursor:
     def __init__(self):
         self.queries = []
+        self.lastrowid = 456
 
     def execute(self, query, params=None):
         self.queries.append((query, params))
 
     def fetchone(self):
+        if FakeDatabase.fetchone_results:
+            return FakeDatabase.fetchone_results.pop(0)
         return FakeDatabase.fetchone_result
 
     def fetchall(self):
-        return []
+        return FakeDatabase.fetchall_result
 
     def close(self):
         pass
@@ -39,6 +43,8 @@ class FakeCursor:
 class FakeDatabase:
     instances = []
     fetchone_result = None
+    fetchone_results = []
+    fetchall_result = []
 
     def __init__(self):
         self.cursor = FakeCursor()
@@ -156,6 +162,8 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         }
         FakeDatabase.instances = []
         FakeDatabase.fetchone_result = None
+        FakeDatabase.fetchone_results = []
+        FakeDatabase.fetchall_result = []
         admin_routes.DatabaseManager = FakeDatabase
 
     def tearDown(self):
@@ -180,6 +188,22 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
             json=body,
             headers={"X-CSRF-Token": "known-token"},
         )
+
+    def post_endpoint_as_admin(self, client, path, body):
+        with client.session_transaction() as session:
+            session["steam_id"] = "76561198000000000"
+            session["csrf_token"] = "known-token"
+        return client.post(
+            path,
+            json=body,
+            headers={"X-CSRF-Token": "known-token"},
+        )
+
+    def get_endpoint_as_admin(self, client, path):
+        with client.session_transaction() as session:
+            session["steam_id"] = "76561198000000000"
+            session["csrf_token"] = "known-token"
+        return client.get(path)
 
     def test_grant_season_skin_publishes_configured_reward(self):
         stub = StubValkeyManager()
@@ -268,6 +292,175 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         queries = FakeDatabase.instances[0].cursor.queries
         self.assertFalse(any("SET ranking_disabled = 1" in query for query, _ in queries))
         self.assertIn("INSERT INTO admin_audit_log", queries[-1][0])
+
+    def test_audit_log_defaults_to_five_entries_and_reports_more(self):
+        FakeDatabase.fetchall_result = [
+            (
+                idx,
+                "76561198000000000",
+                "ranking_time_update",
+                "{}",
+                "{}",
+                "success",
+                datetime(2026, 5, 1, 12, idx),
+            )
+            for idx in range(6)
+        ]
+
+        with self.make_app().test_client() as client:
+            response = self.get_endpoint_as_admin(client, "/api/admin/audit-log")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(len(payload["entries"]), 5)
+        self.assertTrue(payload["has_more"])
+        self.assertEqual(FakeDatabase.instances[0].cursor.queries[0][1], (6,))
+
+    def test_time_update_caps_period_counters_and_recalculates_rank(self):
+        FakeDatabase.fetchone_results = [
+            (123, "76561198000000000", "discord-user", "teamspeak-user", "Player", 1, 1, 0),
+            (300, 120, 80, 200, 90),
+            (100, 40),
+        ]
+
+        with self.make_app().test_client() as client:
+            response = self.post_endpoint_as_admin(
+                client,
+                "/api/admin/players/123/time",
+                {
+                    "platform": "teamspeak",
+                    "total_time": 100,
+                    "season_time": 40,
+                    "reason": "manual correction",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["new_time"]["daily_time"], 100)
+        self.assertEqual(payload["new_time"]["weekly_time"], 80)
+        self.assertEqual(payload["new_time"]["monthly_time"], 100)
+        queries = FakeDatabase.instances[0].cursor.queries
+        time_insert = next(query for query in queries if "INSERT INTO time" in query[0])
+        self.assertEqual(
+            time_insert[1],
+            ("teamspeak-user", "teamspeak", 100, 100, 80, 100, 40),
+        )
+        self.assertTrue(any("UPDATE user" in query and "SET level = ?" in query for query, _ in queries))
+
+    def test_time_update_rejects_disabled_or_stale_targets(self):
+        FakeDatabase.fetchone_results = [
+            (123, "76561198000000000", "discord-user", None, "Player", 1, 1, 1),
+        ]
+
+        with self.make_app().test_client() as client:
+            response = self.post_endpoint_as_admin(
+                client,
+                "/api/admin/players/123/time",
+                {
+                    "platform": "discord",
+                    "total_time": 100,
+                    "season_time": 40,
+                    "reason": "manual correction",
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "ranking-disabled users cannot be edited")
+
+    def test_join_date_rejects_future_dates_before_mutating_user(self):
+        with self.make_app().test_client() as client:
+            response = self.post_endpoint_as_admin(
+                client,
+                "/api/admin/players/123/join-date",
+                {"created_at": "2999-01-01", "reason": "bad date"},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "created_at must not be in the future")
+        queries = FakeDatabase.instances[0].cursor.queries
+        self.assertFalse(any("UPDATE user" in query and "SET created_at" in query for query, _ in queries))
+
+    def test_special_achievement_grant_uses_selected_users_platform_id(self):
+        FakeDatabase.fetchone_results = [
+            (123, "76561198000000000", "discord-user", "teamspeak-user", "Player", 1, 1, 0),
+            None,
+        ]
+
+        with self.make_app().test_client() as client:
+            response = self.post_endpoint_as_admin(
+                client,
+                "/api/admin/special-achievements/grant",
+                {
+                    "user_id": 123,
+                    "platform": "discord",
+                    "platform_id": "malicious-ignored",
+                    "achievement_type": 1,
+                    "reason": "manual grant",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["platform_uid"], "discord-user")
+        self.assertTrue(payload["created"])
+        queries = FakeDatabase.instances[0].cursor.queries
+        grant_insert = next(
+            query for query in queries if "INSERT INTO special_achievements" in query[0]
+        )
+        self.assertEqual(grant_insert[1], ("discord", "discord-user", 1))
+
+    def test_special_achievement_revoke_is_idempotent_and_audited(self):
+        FakeDatabase.fetchone_results = [
+            (123, "76561198000000000", "discord-user", "teamspeak-user", "Player", 1, 1, 0),
+            None,
+        ]
+
+        with self.make_app().test_client() as client:
+            response = self.post_endpoint_as_admin(
+                client,
+                "/api/admin/special-achievements/revoke",
+                {
+                    "user_id": 123,
+                    "platform": "teamspeak",
+                    "achievement_type": 2,
+                    "reason": "manual revoke",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertFalse(payload["deleted"])
+        queries = FakeDatabase.instances[0].cursor.queries
+        self.assertFalse(any("DELETE FROM special_achievements" in query for query, _ in queries))
+        self.assertIn("INSERT INTO admin_audit_log", queries[-1][0])
+
+    def test_unlink_disables_original_user_when_no_platform_link_remains(self):
+        FakeDatabase.fetchone_results = [
+            (123, "76561198000000000", None, "teamspeak-user", "Player", 1, 1, 0),
+            None,
+            (0, 0),
+            (0, 0),
+        ]
+
+        with self.make_app().test_client() as client:
+            response = self.post_endpoint_as_admin(
+                client,
+                "/api/admin/steam/unlink",
+                {
+                    "user_id": 123,
+                    "platform": "teamspeak",
+                    "reason": "split stale steam shell",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["original_user_disabled"])
+        queries = FakeDatabase.instances[0].cursor.queries
+        original_update = next(
+            query for query in queries if "ranking_disabled = CASE" in query[0]
+        )
+        self.assertEqual(original_update[1][0:3], (1, 1, 1))
 
 
 if __name__ == "__main__":

@@ -123,10 +123,10 @@ def get_hall_of_fame():
     # Get all special achievements in one query
     sa_query = "SELECT platform, platform_id, achievement_type FROM special_achievements"
     sa_rows = db.execute_query(sa_query) or []
-    # Build lookup: platform_id -> set of achievement_types
+    # Build lookup by platform plus ID so equal Discord/TeamSpeak IDs do not collide.
     sa_map = {}
     for platform, pid, atype in sa_rows:
-        sa_map.setdefault(pid, set()).add(atype)
+        sa_map.setdefault((platform, str(pid)), set()).add(atype)
 
     def calc_achievement_count(row):
         uid, name, level, discord_id, ts_id, total_time, longest_streak, total_logins, active_slots, active_days = row
@@ -153,8 +153,8 @@ def get_hall_of_fame():
         if active_slots >= 28: count += 1
         # Special achievements from sa_map
         user_sa = set()
-        if discord_id: user_sa |= sa_map.get(str(discord_id), set())
-        if ts_id: user_sa |= sa_map.get(str(ts_id), set())
+        if discord_id: user_sa |= sa_map.get(('discord', str(discord_id)), set())
+        if ts_id: user_sa |= sa_map.get(('teamspeak', str(ts_id)), set())
         # Season division markers are stored in season-specific ranges.
         count += sum(1 for achievement_type in user_sa if is_season_division_achievement_type(achievement_type))
         if 1 in user_sa: count += 1   # old member

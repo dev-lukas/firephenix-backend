@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request, session
 
@@ -16,6 +17,10 @@ VALID_PLATFORMS = {"discord", "teamspeak"}
 PLATFORM_ID_COLUMNS = {
     "discord": "discord_id",
     "teamspeak": "teamspeak_id",
+}
+SPECIAL_ACHIEVEMENTS = {
+    1: {"name": "Altes Eisen", "description": "Sei ein Urgestein von FirePhenix"},
+    2: {"name": "Ehrenmitglied", "description": "Unterstütze den Server in der Vergangenheit"},
 }
 
 
@@ -48,6 +53,55 @@ def _user_dict(row):
         "division": row[6],
         "ranking_disabled": bool(row[7]),
     }
+
+
+def _linked_platforms(user):
+    return [
+        platform
+        for platform in ("teamspeak", "discord")
+        if user.get(f"{platform}_id")
+    ]
+
+
+def _parse_non_negative_minutes(value, field_name):
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be numeric")
+    if minutes < 0:
+        raise ValueError(f"{field_name} must be non-negative")
+    return minutes
+
+
+def _parse_join_date(value):
+    if not isinstance(value, str) or not value:
+        raise ValueError("created_at is required")
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError("created_at must use YYYY-MM-DD")
+    if parsed.date() > datetime.now().date():
+        raise ValueError("created_at must not be in the future")
+    return parsed
+
+
+def _fetch_active_admin_target(db, user_id, platform=None):
+    user = _user_dict(_fetch_user_for_update(db, user_id))
+    if not user:
+        return None, None, "user not found", 404
+    if user["ranking_disabled"]:
+        return user, None, "ranking-disabled users cannot be edited", 400
+    linked_platforms = _linked_platforms(user)
+    if not linked_platforms:
+        return user, None, "user has no linked platform", 400
+    if platform is not None:
+        if platform not in VALID_PLATFORMS:
+            return user, None, "platform must be discord or teamspeak", 400
+        platform_uid = user[f"{platform}_id"]
+        if not platform_uid:
+            return user, None, f"user has no {platform} id", 400
+        return user, platform_uid, None, None
+    return user, None, None, None
 
 
 def _write_audit(db, action, target_identifiers, summary, result_status):
@@ -232,6 +286,22 @@ def search_players():
     })
 
 
+@admin_bp.route("/api/admin/special-achievements")
+@admin_required
+@handle_errors
+def special_achievements_catalog():
+    return jsonify({
+        "achievements": [
+            {
+                "achievement_type": achievement_type,
+                "name": data["name"],
+                "description": data["description"],
+            }
+            for achievement_type, data in SPECIAL_ACHIEVEMENTS.items()
+        ]
+    })
+
+
 @admin_bp.route("/api/admin/players/<int:user_id>")
 @admin_required
 @handle_errors
@@ -304,6 +374,33 @@ def get_player_detail(user_id):
         for row in db.cursor.fetchall()
     }
 
+    special_achievements = []
+    if discord_id or teamspeak_id:
+        db.cursor.execute(f"""
+            SELECT platform, platform_id, achievement_type, awarded_at
+            FROM special_achievements
+            WHERE achievement_type IN ({','.join(['?'] * len(SPECIAL_ACHIEVEMENTS))})
+              AND (
+                (platform = 'discord' AND platform_id = ?)
+                OR (platform = 'teamspeak' AND platform_id = ?)
+              )
+            ORDER BY achievement_type, platform
+        """, (
+            *SPECIAL_ACHIEVEMENTS.keys(),
+            discord_id,
+            teamspeak_id,
+        ))
+        special_achievements = [
+            {
+                "platform": row[0],
+                "platform_id": str(row[1]),
+                "achievement_type": row[2],
+                "name": SPECIAL_ACHIEVEMENTS[row[2]]["name"],
+                "awarded_at": row[3].isoformat() if row[3] else None,
+            }
+            for row in db.cursor.fetchall()
+        ]
+
     db.close()
     return jsonify({
         "id": user[0],
@@ -330,7 +427,235 @@ def get_player_detail(user_id):
         "platform_time": platform_times,
         "activity_heatmap": heatmap,
         "login_streaks": streaks,
+        "special_achievements": special_achievements,
     })
+
+
+@admin_bp.route("/api/admin/players/<int:user_id>/time", methods=["POST"])
+@admin_required
+@csrf_required
+@handle_errors
+def update_player_time(user_id):
+    body = request.get_json(silent=True) or {}
+    platform = body.get("platform")
+    reason = (body.get("reason") or "").strip()
+    action = "ranking_time_update"
+    target_identifiers = {"user_id": user_id, "platform": platform}
+
+    db = DatabaseManager()
+    try:
+        if not reason:
+            return _admin_error(db, action, target_identifiers, {}, "reason is required")
+        try:
+            total_time = _parse_non_negative_minutes(body.get("total_time"), "total_time")
+            season_time = _parse_non_negative_minutes(body.get("season_time"), "season_time")
+        except ValueError as error:
+            return _admin_error(db, action, target_identifiers, {}, str(error))
+        if season_time > total_time:
+            return _admin_error(db, action, target_identifiers, {}, "season_time must not exceed total_time")
+
+        user, platform_uid, error, status = _fetch_active_admin_target(db, user_id, platform)
+        if error:
+            return _admin_error(db, action, target_identifiers, {}, error, status)
+
+        db.cursor.execute("""
+            SELECT
+                COALESCE(total_time, 0),
+                COALESCE(daily_time, 0),
+                COALESCE(weekly_time, 0),
+                COALESCE(monthly_time, 0),
+                COALESCE(season_time, 0)
+            FROM time
+            WHERE platform = ? AND platform_uid = ?
+            FOR UPDATE
+        """, (platform, platform_uid))
+        old_row = db.cursor.fetchone()
+        old_time = {
+            "total_time": old_row[0] if old_row else 0,
+            "daily_time": old_row[1] if old_row else 0,
+            "weekly_time": old_row[2] if old_row else 0,
+            "monthly_time": old_row[3] if old_row else 0,
+            "season_time": old_row[4] if old_row else 0,
+        }
+        next_daily = min(old_time["daily_time"], total_time)
+        next_weekly = min(old_time["weekly_time"], total_time)
+        next_monthly = min(old_time["monthly_time"], total_time)
+
+        db.cursor.execute("""
+            INSERT INTO time (
+                platform_uid, platform, total_time, daily_time, weekly_time,
+                monthly_time, season_time, last_update
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON DUPLICATE KEY UPDATE
+                total_time = VALUES(total_time),
+                daily_time = VALUES(daily_time),
+                weekly_time = VALUES(weekly_time),
+                monthly_time = VALUES(monthly_time),
+                season_time = VALUES(season_time),
+                last_update = CURRENT_TIMESTAMP
+        """, (
+            platform_uid,
+            platform,
+            total_time,
+            next_daily,
+            next_weekly,
+            next_monthly,
+            season_time,
+        ))
+        rank = _recalculate_user_rank(db, user["id"])
+        summary = {
+            "platform_uid": platform_uid,
+            "old_time": old_time,
+            "new_time": {
+                "total_time": total_time,
+                "daily_time": next_daily,
+                "weekly_time": next_weekly,
+                "monthly_time": next_monthly,
+                "season_time": season_time,
+            },
+            "rank": rank,
+            "reason": reason,
+        }
+        _write_audit(db, action, target_identifiers, summary, "success")
+        return jsonify({"ok": True, **summary})
+    except Exception:
+        db.conn.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@admin_bp.route("/api/admin/players/<int:user_id>/join-date", methods=["POST"])
+@admin_required
+@csrf_required
+@handle_errors
+def update_player_join_date(user_id):
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    action = "user_join_date_update"
+    target_identifiers = {"user_id": user_id}
+
+    db = DatabaseManager()
+    try:
+        if not reason:
+            return _admin_error(db, action, target_identifiers, {}, "reason is required")
+        try:
+            created_at = _parse_join_date(body.get("created_at"))
+        except ValueError as error:
+            return _admin_error(db, action, target_identifiers, {}, str(error))
+
+        user, _, error, status = _fetch_active_admin_target(db, user_id)
+        if error:
+            return _admin_error(db, action, target_identifiers, {}, error, status)
+
+        db.cursor.execute("SELECT created_at FROM user WHERE id = ?", (user["id"],))
+        old_created_at = db.cursor.fetchone()
+        db.cursor.execute("""
+            UPDATE user
+            SET created_at = ?
+            WHERE id = ?
+        """, (created_at, user["id"]))
+        summary = {
+            "old_created_at": old_created_at[0].isoformat() if old_created_at and old_created_at[0] else None,
+            "new_created_at": created_at.isoformat(),
+            "reason": reason,
+        }
+        _write_audit(db, action, target_identifiers, summary, "success")
+        return jsonify({"ok": True, **summary})
+    except Exception:
+        db.conn.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def _special_achievement_request(action):
+    body = request.get_json(silent=True) or {}
+    user_id = body.get("user_id")
+    platform = body.get("platform")
+    achievement_type = body.get("achievement_type")
+    reason = (body.get("reason") or "").strip()
+    target_identifiers = {
+        "user_id": user_id,
+        "platform": platform,
+        "achievement_type": achievement_type,
+    }
+
+    db = DatabaseManager()
+    try:
+        if not reason:
+            return _admin_error(db, action, target_identifiers, {}, "reason is required")
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return _admin_error(db, action, target_identifiers, {}, "user_id must be numeric")
+        try:
+            achievement_type = int(achievement_type)
+        except (TypeError, ValueError):
+            return _admin_error(db, action, target_identifiers, {}, "achievement_type must be numeric")
+        if achievement_type not in SPECIAL_ACHIEVEMENTS:
+            return _admin_error(db, action, target_identifiers, {}, "achievement_type is not managed")
+
+        user, platform_uid, error, status = _fetch_active_admin_target(db, user_id, platform)
+        if error:
+            return _admin_error(db, action, target_identifiers, {}, error, status)
+
+        db.cursor.execute("""
+            SELECT id
+            FROM special_achievements
+            WHERE platform = ? AND platform_id = ? AND achievement_type = ?
+            FOR UPDATE
+        """, (platform, platform_uid, achievement_type))
+        existing = db.cursor.fetchone()
+        if action == "special_achievement_grant":
+            if not existing:
+                db.cursor.execute("""
+                    INSERT INTO special_achievements
+                        (platform, platform_id, achievement_type)
+                    VALUES (?, ?, ?)
+                """, (platform, platform_uid, achievement_type))
+            changed_key = "created"
+            changed = existing is None
+        else:
+            if existing:
+                db.cursor.execute("""
+                    DELETE FROM special_achievements
+                    WHERE platform = ? AND platform_id = ? AND achievement_type = ?
+                """, (platform, platform_uid, achievement_type))
+            changed_key = "deleted"
+            changed = existing is not None
+
+        summary = {
+            "platform_uid": platform_uid,
+            "achievement_type": achievement_type,
+            "achievement_name": SPECIAL_ACHIEVEMENTS[achievement_type]["name"],
+            changed_key: changed,
+            "reason": reason,
+        }
+        _write_audit(db, action, target_identifiers, summary, "success")
+        return jsonify({"ok": True, **summary})
+    except Exception:
+        db.conn.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@admin_bp.route("/api/admin/special-achievements/grant", methods=["POST"])
+@admin_required
+@csrf_required
+@handle_errors
+def grant_special_achievement():
+    return _special_achievement_request("special_achievement_grant")
+
+
+@admin_bp.route("/api/admin/special-achievements/revoke", methods=["POST"])
+@admin_required
+@csrf_required
+@handle_errors
+def revoke_special_achievement():
+    return _special_achievement_request("special_achievement_revoke")
 
 
 @admin_bp.route("/api/admin/ranking/transfer", methods=["POST"])
@@ -462,11 +787,32 @@ def unlink_steam_platform():
         """, (platform_uid, user["name"], new_level, new_division))
         new_user_id = db.cursor.lastrowid
 
+        remaining_platforms = [
+            existing_platform
+            for existing_platform in VALID_PLATFORMS
+            if existing_platform != platform and user[f"{existing_platform}_id"]
+        ]
+        original_user_disabled = not remaining_platforms
         db.cursor.execute(f"""
             UPDATE user
-            SET {id_column} = NULL
+            SET {id_column} = NULL,
+                ranking_disabled = CASE WHEN ? = 1 THEN 1 ELSE ranking_disabled END,
+                ranking_disabled_at = CASE
+                    WHEN ? = 1 THEN CURRENT_TIMESTAMP
+                    ELSE ranking_disabled_at
+                END,
+                ranking_disabled_reason = CASE
+                    WHEN ? = 1 THEN ?
+                    ELSE ranking_disabled_reason
+                END
             WHERE id = ?
-        """, (user["id"],))
+        """, (
+            int(original_user_disabled),
+            int(original_user_disabled),
+            int(original_user_disabled),
+            reason[:255],
+            user["id"],
+        ))
         original_rank = _recalculate_user_rank(db, user["id"])
 
         summary = {
@@ -474,6 +820,7 @@ def unlink_steam_platform():
             "platform_uid": platform_uid,
             "new_user_rank": {"level": new_level, "division": new_division},
             "original_user_rank": original_rank,
+            "original_user_disabled": original_user_disabled,
             "reason": reason,
         }
         _write_audit(db, action, target_identifiers, summary, "success")
@@ -613,7 +960,11 @@ def grant_ttt_season_skin():
 @admin_required
 @handle_errors
 def audit_log():
-    limit = min(int(request.args.get("limit", 50)), 100)
+    try:
+        limit = int(request.args.get("limit", 5))
+    except (TypeError, ValueError):
+        limit = 5
+    limit = max(1, min(limit, 100))
     db = DatabaseManager()
     db.cursor.execute("""
         SELECT
@@ -622,10 +973,12 @@ def audit_log():
         FROM admin_audit_log
         ORDER BY created_at DESC, id DESC
         LIMIT ?
-    """, (limit,))
+    """, (limit + 1,))
     rows = db.cursor.fetchall()
     db.close()
 
+    has_more = len(rows) > limit
+    rows = rows[:limit]
     entries = []
     for row in rows:
         entries.append({
@@ -637,4 +990,4 @@ def audit_log():
             "result_status": row[5],
             "created_at": row[6].isoformat() if row[6] else None,
         })
-    return jsonify({"entries": entries})
+    return jsonify({"entries": entries, "has_more": has_more})
