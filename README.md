@@ -12,7 +12,7 @@ enabling users to merge both their Discord and Teamspeak accounts.
 
 ## Installation 
 Install dependencies with  
-`pip install -r requirements.txt`  
+`uv sync`  
 
 Create a .env file with:
 ```
@@ -33,7 +33,7 @@ Run your MariaDB & Valkey
 Run the rankingsystem with
 `bot_runner (start/stop/status)`
 Run the Website API with  
-`flask run`  
+`uv run flask run`  
 
 For production, use tools like [Gunicorn](https://gunicorn.org/) to serve the app.
 

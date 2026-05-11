@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from app.utils.database import DatabaseManager
 from app.utils.valkey_manager import ValkeyManager
 from app.utils.security import limiter, handle_errors
+from app.api.request_args import clamp_page_to_total, pages_for, ranking_request_args
 from datetime import datetime
 
 valkey_manager = ValkeyManager()
@@ -11,11 +12,14 @@ ranking_bp = Blueprint('ranking', __name__)
 @handle_errors
 @limiter.limit("10 per minute")
 def get_ranking():
-    page = int(request.args.get('page', 1))
-    limit = min(int(request.args.get('limit', 10)), 50)
-    search = request.args.get('search', '')
-    
-    offset = (page - 1) * limit
+    try:
+        page, limit, search = ranking_request_args(
+            request.args,
+            default_limit=10,
+            max_limit=50,
+        )
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     
     db = DatabaseManager()
     
@@ -67,10 +71,12 @@ def get_ranking():
         count_query += " AND name LIKE ?"
         query += " AND name LIKE ?"
         params.append(f"%{search}%")
+    total_count = db.execute_query(count_query, tuple(params) if search else None)[0][0]
+    page = clamp_page_to_total(page, total_count, limit)
+    offset = (page - 1) * limit
+
     query += " ORDER BY minutes DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
-
-    total_count = db.execute_query(count_query, params[:-2] if search else None)[0][0]
     result = db.execute_query(query, params)
     current_time = datetime.now()
     db.close()
@@ -116,6 +122,6 @@ def get_ranking():
         'players': players,
         'total': total_count,
         'page': page,
-        'pages': (total_count + limit - 1) // limit,
+        'pages': pages_for(total_count, limit),
         'limit': limit
     })

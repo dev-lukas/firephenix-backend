@@ -16,6 +16,7 @@ def parse_admin_steam_ids(value):
         if item.strip()
     ]
 
+
 class Config:
     # Logger Level
     LOGGER_LEVEL = logging.INFO
@@ -28,6 +29,13 @@ class Config:
         for origin in os.getenv("CORS_ORIGINS", SITE_URL).split(",")
         if origin.strip()
     ]
+    # Production runs behind one trusted Nginx proxy. Trust only X-Forwarded-For
+    # so Flask-Limiter keys login/API limits by the real client IP.
+    TRUST_PROXY_HEADERS = True
+    PROXY_FIX_X_FOR = 1
+    PROXY_FIX_X_PROTO = 0
+    PROXY_FIX_X_HOST = 0
+    PROXY_FIX_X_PORT = 0
     ADMIN_STEAM_IDS = parse_admin_steam_ids(
         os.getenv("admin_steam_ids", os.getenv("ADMIN_STEAM_IDS", ""))
     )

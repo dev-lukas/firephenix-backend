@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request
+from app.api.request_args import positive_int_arg
 from app.utils.database import DatabaseManager, get_best_division_from_season_achievements
 from app.utils.security import handle_errors
 from app.utils.security import limiter
@@ -9,7 +10,10 @@ user_ranking_profile_achievements_bp = Blueprint('/api/ranking/profile/achieveme
 @handle_errors
 @limiter.limit("10 per minute")
 def get_achievements():
-    user_id = int(request.args.get('id', 1))
+    try:
+        user_id = positive_int_arg(request.args, 'id', 1)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
 
     if not user_id:
         return jsonify({'error': 'Invalid user ID'}), 400

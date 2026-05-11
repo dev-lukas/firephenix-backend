@@ -1,8 +1,9 @@
 import re
 import unittest
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
+from app import apply_proxy_fix
 from app.config import Config
 from app.utils.database import (
     SEASON_APEX_ACHIEVEMENT,
@@ -177,6 +178,75 @@ class SecurityHelperTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {'ok': True})
+
+
+class ProxyFixTests(unittest.TestCase):
+    def setUp(self):
+        self.original_proxy_settings = (
+            Config.TRUST_PROXY_HEADERS,
+            Config.PROXY_FIX_X_FOR,
+            Config.PROXY_FIX_X_PROTO,
+            Config.PROXY_FIX_X_HOST,
+            Config.PROXY_FIX_X_PORT,
+        )
+
+    def tearDown(self):
+        (
+            Config.TRUST_PROXY_HEADERS,
+            Config.PROXY_FIX_X_FOR,
+            Config.PROXY_FIX_X_PROTO,
+            Config.PROXY_FIX_X_HOST,
+            Config.PROXY_FIX_X_PORT,
+        ) = self.original_proxy_settings
+
+    def test_proxy_fix_uses_forwarded_client_address(self):
+        Config.TRUST_PROXY_HEADERS = True
+        Config.PROXY_FIX_X_FOR = 1
+        Config.PROXY_FIX_X_PROTO = 1
+        Config.PROXY_FIX_X_HOST = 1
+        Config.PROXY_FIX_X_PORT = 1
+
+        app = Flask(__name__)
+        apply_proxy_fix(app)
+
+        @app.route('/remote-address')
+        def remote_address():
+            return jsonify({'remote_addr': request.remote_addr})
+
+        with app.test_client() as client:
+            response = client.get(
+                '/remote-address',
+                headers={
+                    'X-Forwarded-For': '198.51.100.23',
+                    'X-Forwarded-Proto': 'https',
+                    'X-Forwarded-Host': 'firephenix.de',
+                    'X-Forwarded-Port': '443',
+                },
+                environ_overrides={'REMOTE_ADDR': '127.0.0.1'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {'remote_addr': '198.51.100.23'})
+
+    def test_proxy_fix_ignores_forwarded_client_address_when_disabled(self):
+        Config.TRUST_PROXY_HEADERS = False
+
+        app = Flask(__name__)
+        apply_proxy_fix(app)
+
+        @app.route('/remote-address')
+        def remote_address():
+            return jsonify({'remote_addr': request.remote_addr})
+
+        with app.test_client() as client:
+            response = client.get(
+                '/remote-address',
+                headers={'X-Forwarded-For': '198.51.100.23'},
+                environ_overrides={'REMOTE_ADDR': '127.0.0.1'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {'remote_addr': '127.0.0.1'})
 
 
 if __name__ == '__main__':

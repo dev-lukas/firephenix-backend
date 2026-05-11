@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from datetime import  timedelta
+from werkzeug.middleware.proxy_fix import ProxyFix
 from app.config import Config
 from app.utils.logger import RankingLogger
 from app.utils.security import limiter
@@ -26,10 +27,21 @@ from app.api.admin.routes import admin_bp
 
 logging = RankingLogger(__name__).get_logger()
 
+def apply_proxy_fix(app):
+    if Config.TRUST_PROXY_HEADERS:
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app,
+            x_for=Config.PROXY_FIX_X_FOR,
+            x_proto=Config.PROXY_FIX_X_PROTO,
+            x_host=Config.PROXY_FIX_X_HOST,
+            x_port=Config.PROXY_FIX_X_PORT,
+        )
+
 def create_app():
     logging.info("Starting Flask App...")
 
     app = Flask(__name__)
+    apply_proxy_fix(app)
 
     if not Config.SECRET_KEY:
         raise RuntimeError("SECRET_KEY must be configured")
