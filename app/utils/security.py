@@ -12,7 +12,10 @@ logging = RankingLogger(__name__).get_logger()
 limiter = Limiter(
     get_remote_address,
     storage_uri=Config.LIMITER_STORAGE_URI,
-    storage_options={"socket_connect_timeout": 30},
+    storage_options={
+        "key_prefix": Config.LIMITER_KEY_PREFIX,
+        "socket_connect_timeout": 30,
+    },
     strategy='fixed-window',
     default_limits=["10 per minute"]
 )

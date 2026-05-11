@@ -70,6 +70,8 @@ class Config:
     VALKEY_HOST = os.getenv("VALKEY_HOST", "localhost")
     VALKEY_PORT = int(os.getenv("VALKEY_PORT", "6379"))
     VALKEY_DB = 0
+    VALKEY_USERNAME = os.getenv("VALKEY_USERNAME") or None
+    VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD") or None
     VALKEY_UPDATE_INTERVAL = 2
     # Public Source server status query. This is intentionally read-only and
     # does not use RCON credentials.
@@ -85,6 +87,7 @@ class Config:
     }
     # Limiter
     LIMITER_STORAGE_URI=os.getenv("LIMITER_STORAGE_URI", f"valkey://{VALKEY_HOST}:{VALKEY_PORT}")
+    LIMITER_KEY_PREFIX = os.getenv("LIMITER_KEY_PREFIX", "firephenix:limiter")
     # Bot process management
     PID_FILE = os.getenv(
         "BOT_RUNNER_PID_FILE",
@@ -138,6 +141,20 @@ class Config:
         24: 1200000,  
         25: 1800000   
     }
+
+    @classmethod
+    def valkey_connection_kwargs(cls):
+        kwargs = {
+            "host": cls.VALKEY_HOST,
+            "port": cls.VALKEY_PORT,
+            "db": cls.VALKEY_DB,
+            "decode_responses": True,
+        }
+        if cls.VALKEY_USERNAME:
+            kwargs["username"] = cls.VALKEY_USERNAME
+        if cls.VALKEY_PASSWORD:
+            kwargs["password"] = cls.VALKEY_PASSWORD
+        return kwargs
 
     # Seasonal Division Requirements
     TOP_DIVISION_PLAYER_AMOUNT = 10

@@ -22,6 +22,9 @@ DB_PASSWORD= # Your MariaDB password
 SECRET_KEY= # Your randomized cookie secret key
 CORS_ORIGINS=https://firephenix.de # Comma-separated allowed browser origins
 LIMITER_STORAGE_URI=valkey://localhost:6379 # Use memory:// only for local tests
+LIMITER_KEY_PREFIX=firephenix:limiter
+VALKEY_USERNAME= # Optional Valkey ACL user for app/bot command-bus access
+VALKEY_PASSWORD= # Optional Valkey ACL password for app/bot command-bus access
 ```
 
 ## Configuration

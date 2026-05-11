@@ -26,12 +26,7 @@ class RankingSystem:
         self.dc = None
         self.database = DatabaseManager()
 
-        self.valkey = valkey.Valkey(
-            host=Config.VALKEY_HOST,
-            port=Config.VALKEY_PORT,
-            db=Config.VALKEY_DB,
-            decode_responses=True
-        )
+        self.valkey = valkey.Valkey(**Config.valkey_connection_kwargs())
 
         self.pubsub = self.valkey.pubsub()
         self.pubsub_thread = None

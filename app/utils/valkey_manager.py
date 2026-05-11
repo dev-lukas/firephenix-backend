@@ -28,12 +28,7 @@ class ValkeyManager:
         if self._initialized:
             return
             
-        self.valkey = valkey.Valkey(
-            host=Config.VALKEY_HOST,
-            port=Config.VALKEY_PORT,
-            db=Config.VALKEY_DB,
-            decode_responses=True
-        )
+        self.valkey = valkey.Valkey(**Config.valkey_connection_kwargs())
 
         self._initialized = True
         logging.info("Valkey manager initialized")

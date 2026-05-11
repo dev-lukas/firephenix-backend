@@ -19,6 +19,51 @@ from app.utils.steam import steamid64_to_steam2
 
 
 class ConfigThresholdTests(unittest.TestCase):
+    def test_valkey_connection_kwargs_include_acl_credentials_when_configured(self):
+        original_settings = (
+            Config.VALKEY_HOST,
+            Config.VALKEY_PORT,
+            Config.VALKEY_DB,
+            Config.VALKEY_USERNAME,
+            Config.VALKEY_PASSWORD,
+        )
+        try:
+            Config.VALKEY_HOST = "valkey"
+            Config.VALKEY_PORT = 6379
+            Config.VALKEY_DB = 0
+            Config.VALKEY_USERNAME = "backend"
+            Config.VALKEY_PASSWORD = "secret"
+
+            kwargs = Config.valkey_connection_kwargs()
+        finally:
+            (
+                Config.VALKEY_HOST,
+                Config.VALKEY_PORT,
+                Config.VALKEY_DB,
+                Config.VALKEY_USERNAME,
+                Config.VALKEY_PASSWORD,
+            ) = original_settings
+
+        self.assertEqual(kwargs["host"], "valkey")
+        self.assertEqual(kwargs["port"], 6379)
+        self.assertEqual(kwargs["db"], 0)
+        self.assertEqual(kwargs["username"], "backend")
+        self.assertEqual(kwargs["password"], "secret")
+        self.assertTrue(kwargs["decode_responses"])
+
+    def test_valkey_connection_kwargs_omit_acl_credentials_when_unset(self):
+        original_settings = (Config.VALKEY_USERNAME, Config.VALKEY_PASSWORD)
+        try:
+            Config.VALKEY_USERNAME = None
+            Config.VALKEY_PASSWORD = None
+
+            kwargs = Config.valkey_connection_kwargs()
+        finally:
+            Config.VALKEY_USERNAME, Config.VALKEY_PASSWORD = original_settings
+
+        self.assertNotIn("username", kwargs)
+        self.assertNotIn("password", kwargs)
+
     def test_level_lookup_uses_highest_reached_threshold(self):
         self.assertEqual(Config.get_level_for_minutes(0), 1)
         self.assertEqual(Config.get_level_for_minutes(599), 2)
