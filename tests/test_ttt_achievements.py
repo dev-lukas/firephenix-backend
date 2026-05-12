@@ -86,6 +86,7 @@ class DatabaseTttIngestTests(unittest.TestCase):
 class FakeStreamValkey:
     def __init__(self, order=None):
         self.acks = []
+        self.deletes = []
         self.order = order
 
     def xack(self, stream, group, message_id):
@@ -93,9 +94,14 @@ class FakeStreamValkey:
             self.order.append("ack")
         self.acks.append((stream, group, message_id))
 
+    def xdel(self, stream, message_id):
+        if self.order is not None:
+            self.order.append("delete")
+        self.deletes.append((stream, message_id))
+
 
 class StreamConsumerTests(unittest.TestCase):
-    def test_valid_stream_event_is_acknowledged_after_ingest(self):
+    def test_valid_stream_event_is_acknowledged_and_deleted_after_ingest(self):
         order = []
 
         class FakeDb:
@@ -112,10 +118,11 @@ class StreamConsumerTests(unittest.TestCase):
         )
 
         self.assertTrue(handled)
-        self.assertEqual(order, ["ingest", "ack"])
+        self.assertEqual(order, ["ingest", "ack", "delete"])
         self.assertEqual(valkey_client.acks[0][2], "1-0")
+        self.assertEqual(valkey_client.deletes, [("gameserver:ttt:achievement_events", "1-0")])
 
-    def test_malformed_stream_event_is_acknowledged_without_ingest(self):
+    def test_malformed_stream_event_is_acknowledged_and_deleted_without_ingest(self):
         class FakeDb:
             def ingest_ttt_achievement_event(self, payload):
                 raise AssertionError("malformed events must not be ingested")
@@ -131,6 +138,7 @@ class StreamConsumerTests(unittest.TestCase):
 
         self.assertFalse(handled)
         self.assertEqual(valkey_client.acks, [("gameserver:ttt:achievement_events", "firephenix-backend", "1-1")])
+        self.assertEqual(valkey_client.deletes, [("gameserver:ttt:achievement_events", "1-1")])
 
     def test_database_failure_leaves_stream_event_unacked(self):
         class FakeDb:
@@ -148,6 +156,7 @@ class StreamConsumerTests(unittest.TestCase):
 
         self.assertFalse(handled)
         self.assertEqual(valkey_client.acks, [])
+        self.assertEqual(valkey_client.deletes, [])
 
 
 class FakeUserDatabase:

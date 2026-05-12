@@ -67,7 +67,7 @@ class TttAchievementStreamConsumer:
             normalize_ttt_achievement_payload(payload)
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             logging.error(f"Acknowledging malformed TTT achievement event {message_id}: {exc}")
-            self.valkey.xack(stream_name, self.group, message_id)
+            self.ack_and_delete(stream_name, message_id)
             return False
 
         try:
@@ -76,8 +76,12 @@ class TttAchievementStreamConsumer:
             logging.error(f"Failed to ingest TTT achievement event {message_id}: {exc}")
             return False
 
-        self.valkey.xack(stream_name, self.group, message_id)
+        self.ack_and_delete(stream_name, message_id)
         return True
+
+    def ack_and_delete(self, stream_name: str, message_id: str) -> None:
+        self.valkey.xack(stream_name, self.group, message_id)
+        self.valkey.xdel(stream_name, message_id)
 
     def run_forever(self, running):
         while running():
