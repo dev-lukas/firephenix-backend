@@ -85,6 +85,9 @@ class Config:
         5: "E5FF810F-AEC9-4F36-9333-36CA21F82B64",
         6: "7FEBD81C-6F6D-4C6F-871F-84CD6D42D517",
     }
+    TTT_ROUNDS_PLAYED_THRESHOLDS = [1, 10, 50, 100]
+    TTT_ROUNDS_WON_THRESHOLDS = [1, 10, 25, 50]
+    TTT_KILLS_THRESHOLDS = [1, 25, 100, 250]
     # Limiter
     LIMITER_STORAGE_URI=os.getenv("LIMITER_STORAGE_URI", f"valkey://{VALKEY_HOST}:{VALKEY_PORT}")
     LIMITER_KEY_PREFIX = os.getenv("LIMITER_KEY_PREFIX", "firephenix:limiter")
@@ -261,3 +264,29 @@ class Config:
             if minutes >= requirement:
                 return level
         return 0
+
+    @classmethod
+    def get_ttt_achievement_level(cls, value: int, thresholds: list[int]) -> int:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = 0
+        return sum(1 for threshold in thresholds if value >= threshold)
+
+    @classmethod
+    def get_ttt_achievement_levels(cls, stats: dict) -> dict:
+        stats = stats or {}
+        return {
+            "rounds_played": cls.get_ttt_achievement_level(
+                stats.get("rounds_played", 0),
+                cls.TTT_ROUNDS_PLAYED_THRESHOLDS,
+            ),
+            "rounds_won": cls.get_ttt_achievement_level(
+                stats.get("rounds_won", 0),
+                cls.TTT_ROUNDS_WON_THRESHOLDS,
+            ),
+            "kills": cls.get_ttt_achievement_level(
+                stats.get("kills", 0),
+                cls.TTT_KILLS_THRESHOLDS,
+            ),
+        }

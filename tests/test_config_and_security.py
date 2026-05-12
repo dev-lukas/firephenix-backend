@@ -76,6 +76,19 @@ class ConfigThresholdTests(unittest.TestCase):
         self.assertEqual(Config.get_division_for_minutes(3_000), 2)
         self.assertEqual(Config.get_division_for_minutes(24_000), 5)
 
+    def test_ttt_achievement_levels_use_configured_thresholds(self):
+        levels = Config.get_ttt_achievement_levels({
+            "rounds_played": 50,
+            "rounds_won": 24,
+            "kills": 250,
+        })
+
+        self.assertEqual(levels, {
+            "rounds_played": 3,
+            "rounds_won": 2,
+            "kills": 4,
+        })
+
 
 class SeasonRewardHelperTests(unittest.TestCase):
     def test_steamid64_to_steam2_conversion(self):

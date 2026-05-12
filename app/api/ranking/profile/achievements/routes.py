@@ -1,6 +1,10 @@
 from flask import Blueprint, jsonify, request
 from app.api.request_args import positive_int_arg
-from app.utils.database import DatabaseManager, get_best_division_from_season_achievements
+from app.utils.database import (
+    DatabaseManager,
+    build_ttt_achievement_payload,
+    get_best_division_from_season_achievements,
+)
 from app.utils.security import handle_errors
 from app.utils.security import limiter
 
@@ -22,6 +26,7 @@ def get_achievements():
 
     query = """
         SELECT 
+            u.steam_id,
             u.discord_id, 
             u.teamspeak_id, 
             COALESCE(SUM(CASE WHEN t.platform = 'discord' THEN t.total_time ELSE 0 END) + 
@@ -32,7 +37,7 @@ def get_achievements():
             (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
         WHERE u.id = ?
             AND COALESCE(u.ranking_disabled, 0) = 0
-        GROUP BY u.discord_id, u.teamspeak_id
+        GROUP BY u.steam_id, u.discord_id, u.teamspeak_id
     """
 
     results = db.execute_query(query, (user_id,))
@@ -41,9 +46,11 @@ def get_achievements():
         return jsonify({'error': 'User has no linked account yet'}), 404
 
     user_data = results[0]
-    discord_id = str(user_data[0]) if user_data[0] else None
-    teamspeak_id = str(user_data[1]) if user_data[1] else None
-    total_time = user_data[2]
+    steam_id = str(user_data[0]) if user_data[0] else None
+    discord_id = str(user_data[1]) if user_data[1] else None
+    teamspeak_id = str(user_data[2]) if user_data[2] else None
+    total_time = user_data[3]
+    ttt_stats = db.get_ttt_player_stats(steam_id) if steam_id else None
 
     streak_query = """
     SELECT 
@@ -231,7 +238,8 @@ def get_achievements():
         },
         'apex': {
             'achievement_level': apex_achievement
-        }
+        },
+        'ttt': build_ttt_achievement_payload(ttt_stats)
     })
 
     db.close()

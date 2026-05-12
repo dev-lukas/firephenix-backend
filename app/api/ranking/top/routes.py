@@ -1,5 +1,9 @@
 from flask import Blueprint, jsonify, request
-from app.utils.database import DatabaseManager, is_season_division_achievement_type
+from app.utils.database import (
+    DatabaseManager,
+    is_season_division_achievement_type,
+    sum_ttt_achievement_levels,
+)
 from app.utils.security import limiter, handle_errors
 
 ranking_top_bp = Blueprint('ranking_top', __name__)
@@ -109,14 +113,19 @@ def get_hall_of_fame():
              FROM activity_heatmap ah2
              WHERE ((ah2.platform='discord' AND ah2.platform_uid=u.discord_id)
                  OR (ah2.platform='teamspeak' AND ah2.platform_uid=u.teamspeak_id))
-               AND ah2.activity_minutes > 0) as active_days
+               AND ah2.activity_minutes > 0) as active_days,
+            COALESCE(ttt.rounds_played, 0) as ttt_rounds_played,
+            COALESCE(ttt.rounds_won, 0) as ttt_rounds_won,
+            COALESCE(ttt.kills, 0) as ttt_kills
         FROM user u
         LEFT JOIN time t ON
             (t.platform='discord' AND t.platform_uid=u.discord_id) OR
             (t.platform='teamspeak' AND t.platform_uid=u.teamspeak_id)
+        LEFT JOIN ttt_player_stats ttt ON ttt.steam_id = u.steam_id
         WHERE COALESCE(u.ranking_disabled, 0) = 0
-            AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
-        GROUP BY u.id, u.name, u.level, u.discord_id, u.teamspeak_id
+            AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL OR ttt.steam_id IS NOT NULL)
+        GROUP BY u.id, u.name, u.level, u.discord_id, u.teamspeak_id,
+                 ttt.rounds_played, ttt.rounds_won, ttt.kills
     """
     ach_rows = db.execute_query(ach_query) or []
 
@@ -129,7 +138,21 @@ def get_hall_of_fame():
         sa_map.setdefault((platform, str(pid)), set()).add(atype)
 
     def calc_achievement_count(row):
-        uid, name, level, discord_id, ts_id, total_time, longest_streak, total_logins, active_slots, active_days = row
+        (
+            uid,
+            name,
+            level,
+            discord_id,
+            ts_id,
+            total_time,
+            longest_streak,
+            total_logins,
+            active_slots,
+            active_days,
+            ttt_rounds_played,
+            ttt_rounds_won,
+            ttt_kills,
+        ) = row
         longest_streak = longest_streak or 0
         total_logins = total_logins or 0
         active_slots = active_slots or 0
@@ -160,6 +183,11 @@ def get_hall_of_fame():
         if 1 in user_sa: count += 1   # old member
         if 2 in user_sa: count += 1   # legacy supporter
         if 200 in user_sa: count += 1 # apex
+        count += sum_ttt_achievement_levels({
+            'rounds_played': ttt_rounds_played,
+            'rounds_won': ttt_rounds_won,
+            'kills': ttt_kills,
+        })
         return {'id': uid, 'name': name, 'level': level, 'value': count}
 
     scored = [calc_achievement_count(r) for r in ach_rows]

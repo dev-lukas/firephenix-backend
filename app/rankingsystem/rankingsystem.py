@@ -15,6 +15,7 @@ from app.utils.database import (
     SEASON_RESET_MONTH,
 )
 from app.utils.logger import RankingLogger
+from app.utils.ttt_achievement_consumer import TttAchievementStreamConsumer
 
 logging = RankingLogger(__name__).get_logger()
 
@@ -30,6 +31,8 @@ class RankingSystem:
 
         self.pubsub = self.valkey.pubsub()
         self.pubsub_thread = None
+        self.ttt_achievement_consumer = TttAchievementStreamConsumer(self.valkey, self.database)
+        self.ttt_achievement_thread = None
         self.running = True
         self.platforms = ['discord', 'teamspeak']
 
@@ -134,6 +137,12 @@ class RankingSystem:
             return False
         
         self.pubsub_thread = self.pubsub.run_in_thread(sleep_time=0.001)
+        self.ttt_achievement_thread = threading.Thread(
+            target=self.ttt_achievement_consumer.run_forever,
+            args=(lambda: self.running,),
+            daemon=True,
+        )
+        self.ttt_achievement_thread.start()
         
         try:
             self.main_loop()
@@ -152,6 +161,8 @@ class RankingSystem:
             self.dc.stop()
         if self.pubsub_thread:
             self.pubsub_thread.stop()
+        if self.ttt_achievement_thread and self.ttt_achievement_thread.is_alive():
+            self.ttt_achievement_thread.join(timeout=2)
         try:
             if os.path.exists(Config.PID_FILE):
                 os.remove(Config.PID_FILE)

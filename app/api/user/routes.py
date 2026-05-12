@@ -79,6 +79,7 @@ def get_connected_users():
     """
 
     results = db.execute_query(query, (steam_id,))
+    ttt_stats = db.get_ttt_player_stats(steam_id)
 
     if not results:
         response = jsonify({
@@ -104,6 +105,7 @@ def get_connected_users():
             'time_to_next_division': 0,
             'best_division_achieved': 0,
             'season_one_skins_unlocked': {2: False, 3: False, 4: False, 5: False, 6: False},
+            'ttt_stats': ttt_stats,
             'activity_heatmap': {
                 'data': {
                     day: {
@@ -271,6 +273,7 @@ def get_connected_users():
             'time_to_next_division': int(time_to_next_division),
             'best_division_achieved': best_division_achieved,
             'season_one_skins_unlocked': season_one_skins,
+            'ttt_stats': ttt_stats,
             'activity_heatmap': {
                 'data': heatmap
             },

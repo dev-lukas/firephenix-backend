@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Set, Tuple, Union, Callable, Iterable
 import mariadb
 from app.utils.logger import RankingLogger
@@ -6,7 +6,13 @@ from app.config import Config
 
 logging = RankingLogger(__name__).get_logger()
 
-__all__ = ['DatabaseManager']
+__all__ = [
+    'DatabaseManager',
+    'build_ttt_achievement_payload',
+    'normalize_ttt_achievement_payload',
+    'sum_ttt_achievement_levels',
+    'zero_ttt_player_stats',
+]
 
 SEASON_RESET_MONTH = 6
 SEASON_RESET_DAY = 1
@@ -64,6 +70,187 @@ def can_claim_season_skin(best_division: int, tier: int) -> bool:
 
 def can_upgrade_apex_channel(level: int, achievement_types: Iterable[int]) -> bool:
     return level >= 25 or SEASON_APEX_ACHIEVEMENT in set(achievement_types)
+
+
+TTT_EVENT_COUNTER_FIELDS = ('rounds_played', 'rounds_won', 'kills', 'deaths')
+TTT_EVENT_REQUIRED_FIELDS = {
+    'version',
+    'event_id',
+    'server',
+    'round_id',
+    'steam_id64',
+    'name',
+    'map',
+    'base_role',
+    'sub_role',
+    'team',
+    'win_team',
+    'rounds_played',
+    'rounds_won',
+    'kills',
+    'deaths',
+    'emitted_at',
+}
+
+
+def zero_ttt_player_stats(steam_id: str | int | None = None) -> dict:
+    stats = {
+        'steam_id': str(steam_id) if steam_id else None,
+        'last_ttt_name': None,
+        'rounds_played': 0,
+        'rounds_won': 0,
+        'innocent_wins': 0,
+        'detective_wins': 0,
+        'traitor_wins': 0,
+        'kills': 0,
+        'deaths': 0,
+        'last_played_at': None,
+    }
+    return stats
+
+
+def ttt_stats_from_row(row, steam_id: str | int | None = None) -> dict:
+    if not row:
+        return zero_ttt_player_stats(steam_id)
+
+    stats = {
+        'steam_id': str(row[0]) if row[0] is not None else (str(steam_id) if steam_id else None),
+        'last_ttt_name': row[1],
+        'rounds_played': int(row[2] or 0),
+        'rounds_won': int(row[3] or 0),
+        'innocent_wins': int(row[4] or 0),
+        'detective_wins': int(row[5] or 0),
+        'traitor_wins': int(row[6] or 0),
+        'kills': int(row[7] or 0),
+        'deaths': int(row[8] or 0),
+        'last_played_at': row[9].isoformat() if hasattr(row[9], 'isoformat') else row[9],
+    }
+    return stats
+
+
+def build_ttt_achievement_payload(stats: dict) -> dict:
+    stats = stats or zero_ttt_player_stats()
+    levels = Config.get_ttt_achievement_levels(stats)
+    return {
+        'stats': stats,
+        'achievements': levels,
+        'achievement_level': sum(levels.values()),
+    }
+
+
+def sum_ttt_achievement_levels(stats: dict) -> int:
+    return sum(Config.get_ttt_achievement_levels(stats).values())
+
+
+def _require_steam_id64(value) -> str:
+    steam_id = str(value or '')
+    if len(steam_id) != 17 or not steam_id.isdigit():
+        raise ValueError('invalid_steam_id64')
+    return steam_id
+
+
+def _int_counter(payload: dict, field: str) -> int:
+    try:
+        value = int(payload.get(field))
+    except (TypeError, ValueError):
+        raise ValueError(f'invalid_{field}')
+    if value < 0:
+        raise ValueError(f'invalid_{field}')
+    return value
+
+
+def parse_ttt_emitted_at(value) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, timezone.utc).replace(tzinfo=None)
+
+    text = str(value or '').strip()
+    if not text:
+        return datetime.now(timezone.utc).replace(tzinfo=None)
+
+    if text.endswith('Z'):
+        text = text[:-1] + '+00:00'
+
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return datetime.now(timezone.utc).replace(tzinfo=None)
+
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def normalize_ttt_achievement_payload(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError('event_not_object')
+
+    missing = TTT_EVENT_REQUIRED_FIELDS - payload.keys()
+    if missing:
+        raise ValueError(f"missing_fields:{','.join(sorted(missing))}")
+
+    if payload.get('version') != 1:
+        raise ValueError('invalid_version')
+
+    event_id = str(payload.get('event_id') or '')
+    if not event_id or len(event_id) > 160:
+        raise ValueError('invalid_event_id')
+
+    win_team = str(payload.get('win_team') or '')
+    if win_team not in {'traitor', 'innocent', 'none'}:
+        raise ValueError('invalid_win_team')
+
+    normalized = {
+        'version': 1,
+        'event_id': event_id,
+        'server': str(payload.get('server') or ''),
+        'round_id': str(payload.get('round_id') or ''),
+        'steam_id64': _require_steam_id64(payload.get('steam_id64')),
+        'name': str(payload.get('name') or ''),
+        'map': str(payload.get('map') or ''),
+        'base_role': payload.get('base_role'),
+        'sub_role': payload.get('sub_role'),
+        'team': str(payload.get('team') or ''),
+        'win_team': win_team,
+        'emitted_at': payload.get('emitted_at'),
+    }
+
+    for field in TTT_EVENT_COUNTER_FIELDS:
+        normalized[field] = _int_counter(payload, field)
+
+    if normalized['rounds_played'] not in {0, 1}:
+        raise ValueError('invalid_rounds_played')
+    if normalized['rounds_won'] not in {0, 1}:
+        raise ValueError('invalid_rounds_won')
+
+    return normalized
+
+
+def _role_id(value) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ttt_win_breakdown(event: dict) -> tuple[int, int, int]:
+    if int(event.get('rounds_won') or 0) <= 0:
+        return 0, 0, 0
+
+    if event.get('win_team') == 'traitor':
+        return 0, 0, 1
+
+    if event.get('win_team') == 'innocent':
+        base_role = _role_id(event.get('base_role'))
+        if base_role == 2:
+            return 0, 1, 0
+        return 1, 0, 0
+
+    return 0, 0, 0
 
 
 class DatabaseConnectionError(Exception):
@@ -235,6 +422,23 @@ class DatabaseManager:
                     UNIQUE KEY unique_user_unlockable (steam_id, unlockable_type),
                     INDEX idx_platform_uid (steam_id),
                     INDEX idx_unlockable_type (unlockable_type)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ttt_player_stats (
+                    steam_id BIGINT NOT NULL PRIMARY KEY,
+                    last_ttt_name VARCHAR(255),
+                    rounds_played INT NOT NULL DEFAULT 0,
+                    rounds_won INT NOT NULL DEFAULT 0,
+                    innocent_wins INT NOT NULL DEFAULT 0,
+                    detective_wins INT NOT NULL DEFAULT 0,
+                    traitor_wins INT NOT NULL DEFAULT 0,
+                    kills INT NOT NULL DEFAULT 0,
+                    deaths INT NOT NULL DEFAULT 0,
+                    last_played_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_ttt_last_played_at (last_played_at)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
 
@@ -755,6 +959,83 @@ class DatabaseManager:
         self.cursor.execute(query, (str(platform_uid), platform))
         result = self.cursor.fetchone()
         return result is not None
+
+    @ensure_connection
+    def get_ttt_player_stats(self, steam_id: Union[int, str]) -> dict:
+        steam_id = _require_steam_id64(steam_id)
+        self.cursor.execute("""
+            SELECT
+                steam_id,
+                last_ttt_name,
+                rounds_played,
+                rounds_won,
+                innocent_wins,
+                detective_wins,
+                traitor_wins,
+                kills,
+                deaths,
+                last_played_at
+            FROM ttt_player_stats
+            WHERE steam_id = ?
+        """, (steam_id,))
+        return ttt_stats_from_row(self.cursor.fetchone(), steam_id)
+
+    @ensure_connection
+    def ingest_ttt_achievement_event(self, payload: dict) -> dict:
+        event = normalize_ttt_achievement_payload(payload)
+        emitted_at = parse_ttt_emitted_at(event.get('emitted_at'))
+        innocent_wins, detective_wins, traitor_wins = _ttt_win_breakdown(event)
+
+        try:
+            self.cursor.execute("""
+                INSERT INTO ttt_player_stats (
+                    steam_id,
+                    last_ttt_name,
+                    rounds_played,
+                    rounds_won,
+                    innocent_wins,
+                    detective_wins,
+                    traitor_wins,
+                    kills,
+                    deaths,
+                    last_played_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    last_ttt_name = CASE
+                        WHEN VALUES(last_ttt_name) IS NULL OR VALUES(last_ttt_name) = '' THEN last_ttt_name
+                        ELSE VALUES(last_ttt_name)
+                    END,
+                    rounds_played = rounds_played + VALUES(rounds_played),
+                    rounds_won = rounds_won + VALUES(rounds_won),
+                    innocent_wins = innocent_wins + VALUES(innocent_wins),
+                    detective_wins = detective_wins + VALUES(detective_wins),
+                    traitor_wins = traitor_wins + VALUES(traitor_wins),
+                    kills = kills + VALUES(kills),
+                    deaths = deaths + VALUES(deaths),
+                    last_played_at = CASE
+                        WHEN last_played_at IS NULL OR VALUES(last_played_at) > last_played_at
+                            THEN VALUES(last_played_at)
+                        ELSE last_played_at
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                event['steam_id64'],
+                event['name'],
+                event['rounds_played'],
+                event['rounds_won'],
+                innocent_wins,
+                detective_wins,
+                traitor_wins,
+                event['kills'],
+                event['deaths'],
+                emitted_at,
+            ))
+            self.conn.commit()
+            return {'ok': True, 'event_id': event['event_id']}
+        except mariadb.Error:
+            self.conn.rollback()
+            raise
 
     def close(self) -> None:
         """Close database connection"""
