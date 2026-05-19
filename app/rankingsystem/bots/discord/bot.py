@@ -6,6 +6,7 @@ from discord.ext import commands
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.rankingsystem.bots.discord.client_manager import ClientManager
+from app.rankingsystem.bots.discord.profile_commands import UtilityCommands
 from app.rankingsystem.bots.discord.utils import set_ranks, send_verification, create_owned_channel, set_user_group, remove_user_group, move_channel_apex
 
 logging = RankingLogger(__name__).get_logger()
@@ -45,6 +46,7 @@ class DiscordBot:
         self.bot = None
         self.time_tracker = None
         self.running = True
+        self.commands_synced = False
 
     def create_bot(self):
         bot = commands.Bot(command_prefix='!', intents=self.intents)
@@ -56,6 +58,18 @@ class DiscordBot:
                 await bot.add_cog(self.time_tracker)
             except discord.errors.ClientException:
                 logging.error("ClientException: Cog already loaded")
+            try:
+                await bot.add_cog(UtilityCommands(bot))
+            except discord.errors.ClientException:
+                logging.error("ClientException: UtilityCommands cog already loaded")
+
+            if not self.commands_synced:
+                try:
+                    await bot.tree.sync(guild=discord.Object(id=Config.DISCORD_GUILD_ID))
+                    self.commands_synced = True
+                    logging.info("Discord slash commands synced.")
+                except Exception as e:
+                    logging.error(f"Failed to sync Discord slash commands: {e}")
 
         return bot
 
