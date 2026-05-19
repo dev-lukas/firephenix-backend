@@ -493,7 +493,8 @@ class DatabaseManager:
         else:
             self.cursor.execute(query)
             
-        if query.strip().upper().startswith('SELECT'):
+        query_type = query.strip().upper()
+        if query_type.startswith('SELECT') or query_type.startswith('WITH'):
             return self.cursor.fetchall()
         else:
             self.conn.commit()

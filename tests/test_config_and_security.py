@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request
 from app import apply_proxy_fix
 from app.config import Config
 from app.utils.database import (
+    DatabaseManager,
     SEASON_APEX_ACHIEVEMENT,
     can_claim_season_skin,
     can_upgrade_apex_channel,
@@ -16,6 +17,43 @@ from app.utils.database import (
 )
 from app.utils.security import csrf_required, generate_verification_code, login_required
 from app.utils.steam import steamid64_to_steam2
+
+
+class FakeCursor:
+    def __init__(self, rows):
+        self.rows = rows
+        self.executed = []
+
+    def execute(self, query, params=None):
+        self.executed.append((query, params))
+
+    def fetchall(self):
+        return self.rows
+
+
+class FakeConnection:
+    def __init__(self):
+        self.commits = 0
+
+    def commit(self):
+        self.commits += 1
+
+
+class DatabaseQueryHelperTests(unittest.TestCase):
+    def test_execute_query_returns_rows_for_cte_selects(self):
+        manager = DatabaseManager.__new__(DatabaseManager)
+        manager.conn = FakeConnection()
+        manager.cursor = FakeCursor([(1, "Player")])
+
+        rows = manager.execute_query("""
+            WITH ranked_users AS (
+                SELECT 1 AS id, 'Player' AS name
+            )
+            SELECT * FROM ranked_users
+        """)
+
+        self.assertEqual(rows, [(1, "Player")])
+        self.assertEqual(manager.conn.commits, 0)
 
 
 class ConfigThresholdTests(unittest.TestCase):
