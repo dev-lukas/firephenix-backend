@@ -36,7 +36,7 @@ class FakeDatabase:
                 10,
                 120,
                 240,
-                3050,
+                2500,
                 300,
                 70,
                 3,
@@ -147,7 +147,7 @@ class ProfileCommandFormattingTests(unittest.TestCase):
         self.assertEqual(profile["name"], "Lukas")
         self.assertEqual(profile["rank"], 3)
         self.assertEqual(profile["time_to_next_level"], 2030)
-        self.assertEqual(profile["time_to_next_division"], 5950)
+        self.assertEqual(profile["time_to_next_division"], 500)
         self.assertEqual(profile["achievement_summary"]["division"], 2)
         self.assertEqual(profile["ttt_stats"]["kills"], 25)
 
