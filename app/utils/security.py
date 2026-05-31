@@ -1,6 +1,7 @@
 from flask import request, session, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from werkzeug.exceptions import HTTPException, TooManyRequests
 from app.config import Config
 import secrets
 from functools import wraps
@@ -65,6 +66,10 @@ def handle_errors(f):
     def decorated_function(*args, **kwargs):
         try:
             return f(*args, **kwargs)
+        except TooManyRequests:
+            return jsonify({'error': 'Zu viele Versuche. Bitte warte kurz und versuche es erneut.'}), 429
+        except HTTPException as e:
+            return jsonify({'error': e.description}), e.code
         except Exception as e:
             logging.error(f"Error in {f.__name__}: {e}")
             return jsonify({'error': 'Internal Server Error'}), 500

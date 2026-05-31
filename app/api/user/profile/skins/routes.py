@@ -38,7 +38,7 @@ def ttt_error_response(payload: dict, status_code: int):
 @login_required
 @csrf_required
 @handle_errors
-@limiter.limit("1 per minute")
+@limiter.limit("5 per minute")
 def set_skin():
     payload = request.get_json(silent=True) or {}
     platform = payload.get('platform')
