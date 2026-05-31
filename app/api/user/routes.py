@@ -108,6 +108,7 @@ def get_connected_users():
             'time_to_next_level': 0,
             'time_to_next_division': 0,
             'best_division_achieved': 0,
+            'best_division_by_season': {1: 0, 2: 0},
             'season_skins_unlocked': {1: {2: False, 3: False, 4: False, 5: False, 6: False}},
             'season_one_skins_unlocked': {2: False, 3: False, 4: False, 5: False, 6: False},
             'ttt_stats': ttt_stats,
@@ -236,6 +237,13 @@ def get_connected_users():
         best_division_achieved = get_best_division_from_season_achievements(
             [achievement[0] for achievement in special_achievements_data],
         )
+        best_division_by_season = {
+            1: best_division_achieved,
+            2: get_best_division_from_season_achievements(
+                [achievement[0] for achievement in special_achievements_data],
+                season_number=2,
+            ),
+        }
         apex_rank = user_data[4] >= 25
 
         unlockable_query = """SELECT platform, unlockable_type
@@ -281,6 +289,7 @@ def get_connected_users():
             'time_to_next_level': int(time_to_next_level),
             'time_to_next_division': int(time_to_next_division),
             'best_division_achieved': best_division_achieved,
+            'best_division_by_season': best_division_by_season,
             'season_skins_unlocked': season_skins,
             'season_one_skins_unlocked': season_one_skins,
             'ttt_stats': ttt_stats,
