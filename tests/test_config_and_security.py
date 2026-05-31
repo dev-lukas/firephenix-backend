@@ -110,9 +110,9 @@ class ConfigThresholdTests(unittest.TestCase):
 
     def test_division_lookup_uses_highest_reached_threshold(self):
         self.assertEqual(Config.get_division_for_minutes(0), 1)
-        self.assertEqual(Config.get_division_for_minutes(2_999), 1)
-        self.assertEqual(Config.get_division_for_minutes(3_000), 2)
-        self.assertEqual(Config.get_division_for_minutes(24_000), 5)
+        self.assertEqual(Config.get_division_for_minutes(1_499), 1)
+        self.assertEqual(Config.get_division_for_minutes(1_500), 2)
+        self.assertEqual(Config.get_division_for_minutes(9_000), 5)
 
     def test_ttt_achievement_levels_use_configured_thresholds(self):
         levels = Config.get_ttt_achievement_levels({

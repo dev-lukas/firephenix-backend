@@ -163,10 +163,10 @@ class Config:
     TOP_DIVISION_PLAYER_AMOUNT = 10
     DIVISION_REQUIREMENTS = {
         1: 0,
-        2: 3000,
-        3: 9000,
-        4: 18000,
-        5: 24000
+        2: 1500,
+        3: 3000,
+        4: 6000,
+        5: 9000
     }
 
     TEAMSPEAK_DIVISION_MAP = {
