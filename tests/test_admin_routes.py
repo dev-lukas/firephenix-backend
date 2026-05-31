@@ -158,7 +158,9 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         self.original_rewards = Config.TTT_SEASON_REWARD_ITEM_UUIDS
         Config.ADMIN_STEAM_IDS = ["76561198000000000"]
         Config.TTT_SEASON_REWARD_ITEM_UUIDS = {
-            2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
+            1: {
+                2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
+            },
         }
         FakeDatabase.instances = []
         FakeDatabase.fetchone_result = None
@@ -222,7 +224,7 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
         payload = stub.calls[0][2]
         self.assertEqual(payload["steam_id64"], "76561198000000000")
         self.assertEqual(payload["steam_id2"], "STEAM_0:0:19867136")
-        self.assertEqual(payload["item_uuid"], Config.TTT_SEASON_REWARD_ITEM_UUIDS[2])
+        self.assertEqual(payload["item_uuid"], Config.TTT_SEASON_REWARD_ITEM_UUIDS[1][2])
         self.assertEqual(stub.calls[0][3]["timeout_seconds"], 60)
         self.assertIn("INSERT INTO admin_audit_log", FakeDatabase.instances[0].cursor.queries[0][0])
 

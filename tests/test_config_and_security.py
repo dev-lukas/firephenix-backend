@@ -13,6 +13,9 @@ from app.utils.database import (
     get_season_number_for_end_year,
     get_best_division_from_season_achievements,
     get_season_division_achievement_types,
+    get_ttt_season_reward_key,
+    get_ttt_season_skin_unlockable_type,
+    parse_ttt_season_skin_unlockable_type,
     is_season_division_achievement_type,
 )
 from app.utils.security import csrf_required, generate_verification_code, login_required
@@ -137,11 +140,20 @@ class SeasonRewardHelperTests(unittest.TestCase):
         self.assertEqual(
             Config.TTT_SEASON_REWARD_ITEM_UUIDS,
             {
-                2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
-                3: "36648F60-EA1F-449A-94AD-98914B3BF8AC",
-                4: "E2223E93-6831-4C3E-A295-3086153172F6",
-                5: "E5FF810F-AEC9-4F36-9333-36CA21F82B64",
-                6: "7FEBD81C-6F6D-4C6F-871F-84CD6D42D517",
+                1: {
+                    2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
+                    3: "36648F60-EA1F-449A-94AD-98914B3BF8AC",
+                    4: "E2223E93-6831-4C3E-A295-3086153172F6",
+                    5: "E5FF810F-AEC9-4F36-9333-36CA21F82B64",
+                    6: "7FEBD81C-6F6D-4C6F-871F-84CD6D42D517",
+                },
+                2: {
+                    2: "689C47CB-33C8-4C0D-A5AA-BF3596EE8496",
+                    3: "2D32BDCC-4540-49CC-AA22-6D2933E0C3D0",
+                    4: "DDF1F1C4-F48B-4CB7-BBBC-ED110E4CD732",
+                    5: "501DFCA2-474E-4C09-AFBD-BFE123B04A91",
+                    6: "CC6B3976-2EA6-499E-BE75-A54EF890F010",
+                },
             },
         )
 
@@ -175,6 +187,14 @@ class SeasonRewardHelperTests(unittest.TestCase):
         self.assertTrue(can_claim_season_skin(5, 5))
         self.assertFalse(can_claim_season_skin(5, 6))
         self.assertFalse(can_claim_season_skin(6, 1))
+
+    def test_season_skin_reward_identifiers_are_derived_from_season_and_tier(self):
+        self.assertEqual(get_ttt_season_reward_key(1, 2), "season_1_tier_2")
+        self.assertEqual(get_ttt_season_reward_key(2, 6), "season_2_tier_6")
+        self.assertEqual(get_ttt_season_skin_unlockable_type(1, 2), 12)
+        self.assertEqual(get_ttt_season_skin_unlockable_type(2, 6), 26)
+        self.assertEqual(parse_ttt_season_skin_unlockable_type(23), (2, 3))
+        self.assertIsNone(parse_ttt_season_skin_unlockable_type(21))
 
     def test_apex_upgrade_uses_season_apex_or_level_25(self):
         self.assertTrue(can_upgrade_apex_channel(10, [SEASON_APEX_ACHIEVEMENT]))

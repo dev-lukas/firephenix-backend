@@ -4,7 +4,11 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 
 from app.config import Config
-from app.utils.database import DatabaseManager
+from app.utils.database import (
+    DatabaseManager,
+    get_ttt_season_reward_item_uuid,
+    get_ttt_season_reward_key,
+)
 from app.utils.security import admin_required, csrf_required, handle_errors
 from app.utils.steam import steamid64_to_steam2
 from app.utils.valkey_manager import ValkeyManager
@@ -913,9 +917,10 @@ def grant_ttt_season_skin():
     body = request.get_json(silent=True) or {}
     steam_id64 = str(body.get("steam_id64") or "").strip()
     tier = body.get("tier")
+    season_number = body.get("season", body.get("season_number", 1))
     reason = (body.get("reason") or "").strip()
     action = "ttt_season_skin_grant"
-    target_identifiers = {"steam_id64": steam_id64, "tier": tier}
+    target_identifiers = {"steam_id64": steam_id64, "season": season_number, "tier": tier}
 
     db = DatabaseManager()
     try:
@@ -925,7 +930,11 @@ def grant_ttt_season_skin():
             tier = int(tier)
         except (TypeError, ValueError):
             return _admin_error(db, action, target_identifiers, {}, "tier must be numeric")
-        item_uuid = Config.TTT_SEASON_REWARD_ITEM_UUIDS.get(tier)
+        try:
+            season_number = int(season_number)
+        except (TypeError, ValueError):
+            return _admin_error(db, action, target_identifiers, {}, "season must be numeric")
+        item_uuid = get_ttt_season_reward_item_uuid(season_number, tier)
         if not item_uuid:
             return _admin_error(db, action, target_identifiers, {}, "tier is not configured")
         if not reason:
@@ -935,9 +944,10 @@ def grant_ttt_season_skin():
         command_payload = {
             "steam_id64": steam_id64,
             "steam_id2": steam_id2,
+            "season": season_number,
             "tier": tier,
             "item_uuid": item_uuid,
-            "reward_key": f"season_1_tier_{tier}",
+            "reward_key": get_ttt_season_reward_key(season_number, tier),
         }
         grant_payload, status_code = valkey_manager.gameserver_command(
             "ttt",

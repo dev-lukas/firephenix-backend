@@ -9,7 +9,11 @@ logging = RankingLogger(__name__).get_logger()
 __all__ = [
     'DatabaseManager',
     'build_ttt_achievement_payload',
+    'get_ttt_season_reward_item_uuid',
+    'get_ttt_season_reward_key',
+    'get_ttt_season_skin_unlockable_type',
     'normalize_ttt_achievement_payload',
+    'parse_ttt_season_skin_unlockable_type',
     'sum_ttt_achievement_levels',
     'zero_ttt_player_stats',
 ]
@@ -66,6 +70,31 @@ def is_season_division_achievement_type(achievement_type: int) -> bool:
 
 def can_claim_season_skin(best_division: int, tier: int) -> bool:
     return tier in range(2, 7) and best_division >= tier
+
+
+def get_ttt_season_reward_item_uuid(season_number: int, tier: int) -> Optional[str]:
+    if tier not in range(2, 7):
+        return None
+
+    return Config.TTT_SEASON_REWARD_ITEM_UUIDS.get(season_number, {}).get(tier)
+
+
+def get_ttt_season_reward_key(season_number: int, tier: int) -> str:
+    return f'season_{season_number}_tier_{tier}'
+
+
+def get_ttt_season_skin_unlockable_type(season_number: int, tier: int) -> int:
+    return (season_number * 10) + tier
+
+
+def parse_ttt_season_skin_unlockable_type(unlockable_type: int) -> Tuple[int, int] | None:
+    season_number = unlockable_type // 10
+    tier = unlockable_type % 10
+
+    if season_number < 1 or tier not in range(2, 7):
+        return None
+
+    return season_number, tier
 
 
 def can_upgrade_apex_channel(level: int, achievement_types: Iterable[int]) -> bool:

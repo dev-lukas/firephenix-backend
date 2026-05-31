@@ -1,6 +1,10 @@
 from flask import Blueprint, jsonify, session
 from app.config import Config
-from app.utils.database import DatabaseManager, get_best_division_from_season_achievements
+from app.utils.database import (
+    DatabaseManager,
+    get_best_division_from_season_achievements,
+    parse_ttt_season_skin_unlockable_type,
+)
 from app.utils.security import login_required, handle_errors
 from app.utils.security import limiter
 
@@ -104,6 +108,7 @@ def get_connected_users():
             'time_to_next_level': 0,
             'time_to_next_division': 0,
             'best_division_achieved': 0,
+            'season_skins_unlocked': {1: {2: False, 3: False, 4: False, 5: False, 6: False}},
             'season_one_skins_unlocked': {2: False, 3: False, 4: False, 5: False, 6: False},
             'ttt_stats': ttt_stats,
             'activity_heatmap': {
@@ -219,7 +224,8 @@ def get_connected_users():
         discord_upgraded = False
         teamspeak_upgraded = False
 
-        season_one_skins = {2: False, 3: False, 4: False, 5: False, 6: False}
+        season_skins = {1: {2: False, 3: False, 4: False, 5: False, 6: False}}
+        season_one_skins = season_skins[1]
 
         if special_achievements_data:
             for achievement in special_achievements_data:
@@ -246,8 +252,11 @@ def get_connected_users():
                 elif platform == 'teamspeak' and unlockable_type == 1:
                     teamspeak_upgraded = True
                 if platform == 'gameserver':
-                    if 12 <= unlockable_type <= 16:
-                        season_one_skins[unlockable_type - 10] = True
+                    season_skin = parse_ttt_season_skin_unlockable_type(unlockable_type)
+                    if season_skin:
+                        season_number, tier = season_skin
+                        season_skins.setdefault(season_number, {2: False, 3: False, 4: False, 5: False, 6: False})
+                        season_skins[season_number][tier] = True
 
         response = jsonify({
             'id': user_data[0],
@@ -272,6 +281,7 @@ def get_connected_users():
             'time_to_next_level': int(time_to_next_level),
             'time_to_next_division': int(time_to_next_division),
             'best_division_achieved': best_division_achieved,
+            'season_skins_unlocked': season_skins,
             'season_one_skins_unlocked': season_one_skins,
             'ttt_stats': ttt_stats,
             'activity_heatmap': {

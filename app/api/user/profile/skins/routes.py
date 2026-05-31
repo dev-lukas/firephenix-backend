@@ -3,8 +3,10 @@ from app.utils.database import (
     DatabaseManager,
     can_claim_season_skin,
     get_best_division_from_season_achievements,
+    get_ttt_season_reward_item_uuid,
+    get_ttt_season_reward_key,
+    get_ttt_season_skin_unlockable_type,
 )
-from app.config import Config
 from app.utils.security import csrf_required, limiter, login_required, handle_errors
 from app.utils.steam import steamid64_to_steam2
 from app.utils.valkey_manager import ValkeyManager
@@ -41,6 +43,7 @@ def set_skin():
     payload = request.get_json(silent=True) or {}
     platform = payload.get('platform')
     tier = payload.get('tier')
+    season_number = payload.get('season', payload.get('season_number', 1))
     steam_id = session.get('steam_id')
     
     if not all([platform, steam_id, tier]):
@@ -48,11 +51,24 @@ def set_skin():
         
     if platform not in ['garrysmod']:
         return jsonify({'error': 'Invalid platform'}), 400
+
+    try:
+        tier = int(tier)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid tier'}), 400
+
+    try:
+        season_number = int(season_number)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid season'}), 400
     
     if tier not in [2, 3, 4, 5, 6]:
         return jsonify({'error': 'Invalid tier'}), 400
+
+    if season_number < 1:
+        return jsonify({'error': 'Invalid season'}), 400
     
-    item_uuid = Config.TTT_SEASON_REWARD_ITEM_UUIDS.get(tier)
+    item_uuid = get_ttt_season_reward_item_uuid(season_number, tier)
     if not item_uuid:
         return jsonify({'error': 'Reward item is not configured'}), 500
 
@@ -103,6 +119,7 @@ def set_skin():
 
         best_division_achieved = get_best_division_from_season_achievements(
             [achievement[0] for achievement in special_achievements_data],
+            season_number=season_number,
         )
 
         if not can_claim_season_skin(best_division_achieved, tier):
@@ -118,7 +135,8 @@ def set_skin():
             AND unlockable_type = ?
         """
 
-        db.cursor.execute(unlock_query, (steam_id, tier + 10))
+        unlockable_type = get_ttt_season_skin_unlockable_type(season_number, tier)
+        db.cursor.execute(unlock_query, (steam_id, unlockable_type))
         unlocked = db.cursor.fetchone()
 
         if unlocked:
@@ -127,9 +145,10 @@ def set_skin():
         grant_payload, grant_status = valkey_manager.gameserver_command('ttt', 'grant_season_skin', {
             'steam_id64': str(steam_id),
             'steam_id2': steam_id2,
+            'season': season_number,
             'tier': tier,
             'item_uuid': item_uuid,
-            'reward_key': f'season_1_tier_{tier}',
+            'reward_key': get_ttt_season_reward_key(season_number, tier),
         }, timeout_seconds=60)
         if not grant_payload.get('ok'):
             return ttt_error_response(grant_payload, grant_status)
@@ -137,8 +156,8 @@ def set_skin():
         db.execute_query("""
             INSERT INTO unlockables (steam_id, platform, unlockable_type)
             VALUES (?, 'gameserver', ?)
-        """, (steam_id, tier + 10))
+        """, (steam_id, unlockable_type))
     finally:
         db.close()
 
-    return jsonify({'message': 'Skin unlocked'})
+    return jsonify({'message': 'Skin unlocked', 'season': season_number, 'tier': tier})

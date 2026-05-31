@@ -69,11 +69,16 @@ class SkinRedemptionRouteTests(unittest.TestCase):
         FakeDatabase.achievements = [(1001,), (1002,), (1003,)]
         FakeDatabase.unlock_row = None
         Config.TTT_SEASON_REWARD_ITEM_UUIDS = {
-            2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
-            3: "36648F60-EA1F-449A-94AD-98914B3BF8AC",
-            4: "E2223E93-6831-4C3E-A295-3086153172F6",
-            5: "E5FF810F-AEC9-4F36-9333-36CA21F82B64",
-            6: "7FEBD81C-6F6D-4C6F-871F-84CD6D42D517",
+            1: {
+                2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
+                3: "36648F60-EA1F-449A-94AD-98914B3BF8AC",
+                4: "E2223E93-6831-4C3E-A295-3086153172F6",
+                5: "E5FF810F-AEC9-4F36-9333-36CA21F82B64",
+                6: "7FEBD81C-6F6D-4C6F-871F-84CD6D42D517",
+            },
+            2: {
+                3: "SEASON-TWO-GOLD",
+            },
         }
 
     def tearDown(self):
@@ -115,9 +120,31 @@ class SkinRedemptionRouteTests(unittest.TestCase):
         command_payload = stub.calls[0][2]
         self.assertEqual(command_payload["steam_id64"], "76561198000000000")
         self.assertEqual(command_payload["steam_id2"], "STEAM_0:0:19867136")
-        self.assertEqual(command_payload["item_uuid"], Config.TTT_SEASON_REWARD_ITEM_UUIDS[2])
+        self.assertEqual(command_payload["item_uuid"], Config.TTT_SEASON_REWARD_ITEM_UUIDS[1][2])
+        self.assertEqual(command_payload["season"], 1)
+        self.assertEqual(command_payload["reward_key"], "season_1_tier_2")
         self.assertEqual(stub.calls[0][3]["timeout_seconds"], 60)
         self.assertEqual(FakeDatabase.instances[0].inserts[0][1], ("76561198000000000", 12))
+
+    def test_season_two_uses_season_specific_achievement_rewards_and_unlockable(self):
+        FakeDatabase.achievements = [(1011,), (1012,), (1013,)]
+        stub = StubValkeyManager()
+        skin_routes.valkey_manager = stub
+
+        with self.make_app().test_client() as client:
+            response = self.post_skin(client, {
+                "platform": "garrysmod",
+                "season": 2,
+                "tier": 3,
+            })
+
+        self.assertEqual(response.status_code, 200)
+        command_payload = stub.calls[0][2]
+        self.assertEqual(command_payload["season"], 2)
+        self.assertEqual(command_payload["tier"], 3)
+        self.assertEqual(command_payload["item_uuid"], "SEASON-TWO-GOLD")
+        self.assertEqual(command_payload["reward_key"], "season_2_tier_3")
+        self.assertEqual(FakeDatabase.instances[0].inserts[0][1], ("76561198000000000", 23))
 
     def test_rejects_duplicate_without_calling_ttt(self):
         FakeDatabase.unlock_row = ("2026-05-06",)
