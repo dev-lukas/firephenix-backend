@@ -58,29 +58,6 @@ class DatabaseQueryHelperTests(unittest.TestCase):
         self.assertEqual(rows, [(1, "Player")])
         self.assertEqual(manager.conn.commits, 0)
 
-    def test_unlockables_unique_index_migrates_to_platform_scope(self):
-        manager = DatabaseManager.__new__(DatabaseManager)
-        manager.cursor = FakeCursor([("steam_id",), ("unlockable_type",)])
-
-        manager._ensure_unlockables_platform_unique_index()
-
-        executed_queries = [query for query, _ in manager.cursor.executed]
-        self.assertTrue(any("DROP INDEX unique_user_unlockable" in query for query in executed_queries))
-        self.assertTrue(any(
-            "ADD UNIQUE KEY unique_user_unlockable (steam_id, platform, unlockable_type)" in query
-            for query in executed_queries
-        ))
-
-    def test_unlockables_unique_index_keeps_current_platform_scope(self):
-        manager = DatabaseManager.__new__(DatabaseManager)
-        manager.cursor = FakeCursor([("steam_id",), ("platform",), ("unlockable_type",)])
-
-        manager._ensure_unlockables_platform_unique_index()
-
-        executed_queries = [query for query, _ in manager.cursor.executed]
-        self.assertFalse(any("DROP INDEX unique_user_unlockable" in query for query in executed_queries))
-        self.assertFalse(any("ADD UNIQUE KEY unique_user_unlockable" in query for query in executed_queries))
-
 
 class ConfigThresholdTests(unittest.TestCase):
     def test_valkey_connection_kwargs_include_acl_credentials_when_configured(self):

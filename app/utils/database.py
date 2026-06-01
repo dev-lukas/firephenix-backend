@@ -328,38 +328,6 @@ class DatabaseManager:
                 raise DatabaseConnectionError("Failed to reconnect to database")
         return wrapper
 
-    def _get_index_columns(self, table_name: str, index_name: str) -> Tuple[str, ...]:
-        self.cursor.execute(
-            """
-            SELECT COLUMN_NAME
-            FROM information_schema.STATISTICS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = ?
-              AND INDEX_NAME = ?
-            ORDER BY SEQ_IN_INDEX
-            """,
-            (table_name, index_name),
-        )
-        return tuple(row[0] for row in self.cursor.fetchall())
-
-    def _ensure_unlockables_platform_unique_index(self) -> None:
-        desired_columns = ('steam_id', 'platform', 'unlockable_type')
-        existing_columns = self._get_index_columns('unlockables', 'unique_user_unlockable')
-
-        if existing_columns == desired_columns:
-            return
-
-        if existing_columns:
-            self.cursor.execute("""
-                ALTER TABLE unlockables
-                DROP INDEX unique_user_unlockable
-            """)
-
-        self.cursor.execute("""
-            ALTER TABLE unlockables
-            ADD UNIQUE KEY unique_user_unlockable (steam_id, platform, unlockable_type)
-        """)
-
     def create_tables(self):
         try:
             self.cursor.execute("""
@@ -485,7 +453,6 @@ class DatabaseManager:
                     INDEX idx_unlockable_type (unlockable_type)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
             """)
-            self._ensure_unlockables_platform_unique_index()
 
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ttt_player_stats (
