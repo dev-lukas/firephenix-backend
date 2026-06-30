@@ -1,3 +1,5 @@
+import secrets
+
 from flask import Blueprint, jsonify, request, session
 from app.utils.database import DatabaseManager
 from app.utils.security import csrf_required, limiter, login_required, generate_verification_code, handle_errors
@@ -6,6 +8,11 @@ from app.utils.valkey_manager import ValkeyManager
 user_profile_verification_bp = Blueprint('/api/user/profile/verification/', __name__)
 
 valkey_manager = ValkeyManager()
+
+# Maximum wrong guesses allowed before a verification code is invalidated.
+# This caps brute-force attempts per issued code regardless of source IP;
+# requesting a new code is itself rate limited and delivers a fresh code.
+MAX_VERIFICATION_ATTEMPTS = 5
 
 @user_profile_verification_bp.route('/api/user/profile/verification/initiate', methods=['POST'])
 @login_required
@@ -81,17 +88,36 @@ def verify_code():
     
     db = DatabaseManager()
     result = db.execute_query("""
-        SELECT platform_id FROM verification
-        WHERE steam_id = ? AND platform = ? AND verification_code = ?
+        SELECT id, platform_id, verification_code, attempts FROM verification
+        WHERE steam_id = ? AND platform = ?
         AND expires_at > NOW()
         LIMIT 1
-    """, (steam_id, platform, code))
-    
+    """, (steam_id, platform))
+
     if not result:
         return jsonify({'error': 'Invalid or expired code'}), 400
-        
-    platform_id = result[0][0]
-    
+
+    verification_id, platform_id, expected_code, attempts = result[0]
+
+    # Already exhausted: invalidate and force a fresh code to be requested.
+    if attempts >= MAX_VERIFICATION_ATTEMPTS:
+        db.execute_query("DELETE FROM verification WHERE id = ?", (verification_id,))
+        db.close()
+        return jsonify({'error': 'Too many invalid attempts. Please request a new code.'}), 429
+
+    # Constant-time comparison; both sides coerced to str (stored as VARCHAR).
+    if not secrets.compare_digest(str(expected_code), str(code)):
+        attempts += 1
+        if attempts >= MAX_VERIFICATION_ATTEMPTS:
+            db.execute_query("DELETE FROM verification WHERE id = ?", (verification_id,))
+        else:
+            db.execute_query(
+                "UPDATE verification SET attempts = ? WHERE id = ?",
+                (attempts, verification_id),
+            )
+        db.close()
+        return jsonify({'error': 'Invalid or expired code'}), 400
+
     try:
         db.cursor.execute("START TRANSACTION")
         db.cursor.execute("""

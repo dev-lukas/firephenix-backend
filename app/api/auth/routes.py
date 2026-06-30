@@ -37,6 +37,13 @@ def steam_callback():
     if not signed or not claimed_id:
         return jsonify({'error': 'Invalid Steam login'}), 400
 
+    # The identity must be covered by the signature, otherwise an attacker could
+    # supply an arbitrary claimed_id alongside a valid signature over other
+    # fields and have check_authentication still report is_valid:true.
+    signed_fields = set(signed.split(','))
+    if not {'claimed_id', 'identity'} <= signed_fields:
+        return jsonify({'error': 'Invalid Steam login'}), 400
+
     params = {
         'openid.assoc_handle': request.args.get('openid.assoc_handle'),
         'openid.signed': signed,

@@ -409,11 +409,16 @@ class DatabaseManager:
                     platform_id VARCHAR(255) NOT NULL,
                     platform ENUM('discord', 'teamspeak') NOT NULL,
                     verification_code VARCHAR(6) NOT NULL,
+                    attempts INT NOT NULL DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     expires_at TIMESTAMP NOT NULL,
                     INDEX idx_user_platform (steam_id, platform),
                     INDEX idx_expires (expires_at)
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;
+            """)
+            self.cursor.execute("""
+                ALTER TABLE verification
+                ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0
             """)
 
             self.cursor.execute("""
