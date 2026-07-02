@@ -285,6 +285,41 @@ class GameServerRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["command"], "restart")
         self.assertEqual(gameserver_routes.valkey_manager.calls[0][3]["timeout_seconds"], 240)
 
+    def test_start_and_stop_dispatch_commands_with_long_timeout(self):
+        for command in ("start", "stop"):
+            with self.subTest(command=command):
+                gameserver_routes.valkey_manager.calls.clear()
+                with self.make_app().test_client() as client:
+                    with client.session_transaction() as session:
+                        session["steam_id"] = "76561198000000000"
+                        session["csrf_token"] = "known-token"
+                    response = client.post(
+                        f"/api/gameservers/ttt/{command}",
+                        headers={"X-CSRF-Token": "known-token"},
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()["command"], command)
+                server_id, sent_command, _, kwargs = (
+                    gameserver_routes.valkey_manager.calls[0]
+                )
+                self.assertEqual((server_id, sent_command), ("ttt", command))
+                self.assertEqual(kwargs["timeout_seconds"], 240)
+
+    def test_start_and_stop_require_admin(self):
+        for command in ("start", "stop"):
+            with self.subTest(command=command):
+                with self.make_app().test_client() as client:
+                    with client.session_transaction() as session:
+                        session["steam_id"] = "76561198999999999"
+                        session["csrf_token"] = "known-token"
+                    response = client.post(
+                        f"/api/gameservers/ttt/{command}",
+                        headers={"X-CSRF-Token": "known-token"},
+                    )
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(gameserver_routes.valkey_manager.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

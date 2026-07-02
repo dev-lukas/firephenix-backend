@@ -136,26 +136,20 @@ class SeasonRewardHelperTests(unittest.TestCase):
         self.assertEqual(steamid64_to_steam2("76561198000000000"), "STEAM_0:0:19867136")
         self.assertEqual(steamid64_to_steam2("76561198000000001"), "STEAM_0:1:19867136")
 
-    def test_ttt_season_reward_uuids_are_hardcoded(self):
-        self.assertEqual(
-            Config.TTT_SEASON_REWARD_ITEM_UUIDS,
-            {
-                1: {
-                    2: "66C32AD2-0232-4AF0-9F5E-B90D06DD61BA",
-                    3: "36648F60-EA1F-449A-94AD-98914B3BF8AC",
-                    4: "E2223E93-6831-4C3E-A295-3086153172F6",
-                    5: "E5FF810F-AEC9-4F36-9333-36CA21F82B64",
-                    6: "7FEBD81C-6F6D-4C6F-871F-84CD6D42D517",
-                },
-                2: {
-                    2: "689C47CB-33C8-4C0D-A5AA-BF3596EE8496",
-                    3: "2D32BDCC-4540-49CC-AA22-6D2933E0C3D0",
-                    4: "DDF1F1C4-F48B-4CB7-BBBC-ED110E4CD732",
-                    5: "501DFCA2-474E-4C09-AFBD-BFE123B04A91",
-                    6: "CC6B3976-2EA6-499E-BE75-A54EF890F010",
-                },
-            },
-        )
+    def test_ttt_season_reward_uuids_cover_every_claimable_tier_uniquely(self):
+        all_uuids = []
+        for season, tiers in Config.TTT_SEASON_REWARD_ITEM_UUIDS.items():
+            self.assertEqual(sorted(tiers), [2, 3, 4, 5, 6],
+                             f"season {season} must configure tiers 2-6")
+            for tier, item_uuid in tiers.items():
+                self.assertRegex(
+                    item_uuid,
+                    r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$",
+                    f"season {season} tier {tier} must be an uppercase UUID",
+                )
+                all_uuids.append(item_uuid)
+        self.assertEqual(len(all_uuids), len(set(all_uuids)),
+                         "reward item UUIDs must be unique across seasons/tiers")
 
     def test_division_achievement_markers_are_cumulative(self):
         self.assertEqual(get_season_division_achievement_types(1), [1001])

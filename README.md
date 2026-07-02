@@ -41,3 +41,15 @@ Run the Website API with
 For production, use tools like [Gunicorn](https://gunicorn.org/) to serve the app.
 
 Authenticated write requests must include the `X-CSRF-Token` header. The token is returned by `/api/auth/check` after a successful Steam login.
+
+## Testing
+Unit tests (no infrastructure needed):
+`python -m unittest discover -s tests`
+
+Integration tests run the real Flask app against real MariaDB + Valkey containers
+(the schema is created automatically on first connect):
+`scripts/run-integration-tests.sh`
+
+The integration suite lives in `tests/integration/` and is skipped unless
+`RUN_INTEGRATION_TESTS=1` is set. In CI it additionally runs inside the backend
+container as part of the docker-compose stack smoke test.

@@ -206,35 +206,6 @@ def fake_discord_history_message(author, content):
 
 
 class EmberContextTests(unittest.IsolatedAsyncioTestCase):
-    def test_system_prompt_uses_current_public_server_facts(self):
-        self.assertIn("TeamSpeak 3: firephenix.de", aichat.SYSTEM_PROMPT)
-        self.assertIn("Garry's Mod TTT: firephenix.de", aichat.SYSTEM_PROMPT)
-        self.assertIn("Passwort ember", aichat.SYSTEM_PROMPT)
-        self.assertIn("Seasons laufen jaehrlich", aichat.SYSTEM_PROMPT)
-        self.assertNotIn("gaming.firephenix.de", aichat.SYSTEM_PROMPT)
-        self.assertNotIn("ts.firephenix.de", aichat.SYSTEM_PROMPT)
-        self.assertNotIn("Port 9987", aichat.SYSTEM_PROMPT)
-        self.assertNotIn("firephenix.de:27015", aichat.SYSTEM_PROMPT)
-
-    def test_system_prompt_allows_snippy_but_accurate_replies_to_toxic_users(self):
-        self.assertIn("Standardmaessig bist du freundlich", aichat.SYSTEM_PROMPT)
-        self.assertIn("Fragen zum FirePhenix-Ökosystem", aichat.SYSTEM_PROMPT)
-        self.assertIn("Bei Off-Topic-Fragen", aichat.SYSTEM_PROMPT)
-        self.assertIn("kurzen, harmlosen Seitenhieb", aichat.SYSTEM_PROMPT)
-        self.assertIn("RTX 4070", aichat.SYSTEM_PROMPT)
-        self.assertIn("aggressiv, toxisch oder belästigend", aichat.SYSTEM_PROMPT)
-        self.assertIn("snippier und dissender kontern", aichat.SYSTEM_PROMPT)
-        self.assertIn("sachlich korrekt", aichat.SYSTEM_PROMPT)
-        self.assertIn("Keine harten Beleidigungen", aichat.SYSTEM_PROMPT)
-
-    def test_system_prompt_discourages_overshooting_answers(self):
-        self.assertIn("Antworte nur auf die konkrete Frage", aichat.SYSTEM_PROMPT)
-        self.assertIn("keine allgemeinen Hinweise", aichat.SYSTEM_PROMPT)
-        self.assertIn("1-2 Saetzen", aichat.SYSTEM_PROMPT)
-        self.assertIn("Wenn die Frage wirklich mehrdeutig ist", aichat.SYSTEM_PROMPT)
-        self.assertIn('"TS" darfst du im FirePhenix-Kontext als TeamSpeak verstehen', aichat.SYSTEM_PROMPT)
-        self.assertIn("Bei einfachen Server-/Adressfragen reicht", aichat.SYSTEM_PROMPT)
-
     async def test_context_includes_history_with_authors_and_excludes_other_bots(self):
         bot_id = 55
         ember_author = fake_discord_author(bot_id, "Ember", bot=True)

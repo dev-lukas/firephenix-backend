@@ -137,6 +137,12 @@ for path in /api/auth/check /api/ranking/stats /api/ranking/top "/api/user/onlin
   echo "Backend endpoint ${path} is ready."
 done
 
+echo "Running backend integration test suite against the live stack..."
+docker compose -f "$workdir/docker-compose.ci.yml" exec -T \
+  -e RUN_INTEGRATION_TESTS=1 \
+  -e ADMIN_STEAM_IDS=76561198000000001 \
+  backend python3 -m unittest discover -s tests/integration -t /app -v
+
 for path in / /ranking /wiki /profile; do
   response_file="$(mktemp)"
   error_file="$(mktemp)"
