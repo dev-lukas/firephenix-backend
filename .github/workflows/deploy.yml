@@ -18,6 +18,12 @@ on:
         type: string
         default: backend bot
 
+# One pipeline per ref at a time: the self-hosted runner hosts several repos,
+# and parallel docker-compose integration stacks collide on ports/memory.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
