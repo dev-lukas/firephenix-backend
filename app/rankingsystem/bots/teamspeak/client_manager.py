@@ -54,7 +54,8 @@ class ClientManager:
                 self.client_uid_map[client["clid"]] = uid
                 self.client_name_map[uid] = name
                 logging.debug(f"Tracking initial client: {name} ({uid})")
-                
+
+                self._capture_myteamspeak_identity(uid, client_info_full.get("client_myteamspeak_id"))
                 self.check_vpn_and_kick_if_needed(client_info_full, client["clid"], ts3conn)
 
             logging.info(f"Initial client scan complete. Tracking {len(self.connected_users)} users.")
@@ -97,6 +98,11 @@ class ClientManager:
                 logging.warning(f"Could not get full info for connecting clid {clid}. UID: {uid}, Name: {name}. Skipping.")
                 return None
 
+            # TS3->TS6 identity bridge: capture the stable myTeamSpeak account id (identical
+            # across TS3/TS6) so returning users are recognised after the UID hash change.
+            # Best-effort — never let it break connection handling.
+            self._capture_myteamspeak_identity(uid, client_info.get("client_myteamspeak_id"))
+
             groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
             
@@ -117,6 +123,26 @@ class ClientManager:
         except Exception as ex:
             logging.error(f"Unexpected error in handle_client_connect for clid {clid}: {ex}")
             return None
+
+    def _capture_myteamspeak_identity(self, uid, myteamspeak_id, is_ts6=False):
+        """Persist the connecting client's myTeamSpeak account id and, if it maps to a
+        prior TS identity under a different UID, bridge them (seamless recognition).
+        Best-effort: any failure is logged and swallowed so connect handling continues."""
+        if not myteamspeak_id:
+            return
+        db = None
+        try:
+            db = DatabaseManager()
+            result = db.recognize_teamspeak_client(uid, myteamspeak_id, is_ts6=is_ts6)
+            if result.get("merged"):
+                logging.info(
+                    f"Bridged TS identity via myTeamSpeak id: absorbed {result.get('absorbed_uid')} "
+                    f"into {result.get('canonical_uid')}")
+        except Exception as e:
+            logging.error(f"myTeamSpeak identity capture failed for uid {uid}: {e}")
+        finally:
+            if db:
+                db.close()
 
     def check_vpn_and_kick_if_needed(self, client_info, clid, ts3conn):
         """Check if the user's IP is VPN/Tor and kick if level is too low."""

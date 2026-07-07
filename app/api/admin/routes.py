@@ -165,15 +165,15 @@ def _move_time(db, platform, source_uid, target_uid):
         SELECT
             ?, platform, total_time, daily_time, weekly_time,
             monthly_time, season_time, last_update
-        FROM time
-        WHERE platform = ? AND platform_uid = ?
+        FROM time src
+        WHERE src.platform = ? AND src.platform_uid = ?
         ON DUPLICATE KEY UPDATE
-            total_time = time.total_time + VALUES(total_time),
-            daily_time = time.daily_time + VALUES(daily_time),
-            weekly_time = time.weekly_time + VALUES(weekly_time),
-            monthly_time = time.monthly_time + VALUES(monthly_time),
-            season_time = time.season_time + VALUES(season_time),
-            last_update = GREATEST(time.last_update, VALUES(last_update))
+            time.total_time = time.total_time + VALUES(total_time),
+            time.daily_time = time.daily_time + VALUES(daily_time),
+            time.weekly_time = time.weekly_time + VALUES(weekly_time),
+            time.monthly_time = time.monthly_time + VALUES(monthly_time),
+            time.season_time = time.season_time + VALUES(season_time),
+            time.last_update = GREATEST(time.last_update, VALUES(last_update))
     """, (target_uid, platform, source_uid))
     db.cursor.execute(
         "DELETE FROM time WHERE platform = ? AND platform_uid = ?",
@@ -190,11 +190,11 @@ def _move_heatmap(db, platform, source_uid, target_uid):
         SELECT
             ?, platform, day_of_week, time_category,
             activity_minutes, last_update
-        FROM activity_heatmap
-        WHERE platform = ? AND platform_uid = ?
+        FROM activity_heatmap src
+        WHERE src.platform = ? AND src.platform_uid = ?
         ON DUPLICATE KEY UPDATE
-            activity_minutes = activity_heatmap.activity_minutes + VALUES(activity_minutes),
-            last_update = GREATEST(activity_heatmap.last_update, VALUES(last_update))
+            activity_heatmap.activity_minutes = activity_heatmap.activity_minutes + VALUES(activity_minutes),
+            activity_heatmap.last_update = GREATEST(activity_heatmap.last_update, VALUES(last_update))
     """, (target_uid, platform, source_uid))
     db.cursor.execute(
         "DELETE FROM activity_heatmap WHERE platform = ? AND platform_uid = ?",
@@ -210,13 +210,13 @@ def _move_login_streak(db, platform, source_uid, target_uid):
         )
         SELECT
             ?, platform, logins, current_streak, longest_streak, last_login
-        FROM login_streak
-        WHERE platform = ? AND platform_uid = ?
+        FROM login_streak src
+        WHERE src.platform = ? AND src.platform_uid = ?
         ON DUPLICATE KEY UPDATE
-            logins = login_streak.logins + VALUES(logins),
-            current_streak = GREATEST(login_streak.current_streak, VALUES(current_streak)),
-            longest_streak = GREATEST(login_streak.longest_streak, VALUES(longest_streak)),
-            last_login = GREATEST(login_streak.last_login, VALUES(last_login))
+            login_streak.logins = login_streak.logins + VALUES(logins),
+            login_streak.current_streak = GREATEST(login_streak.current_streak, VALUES(current_streak)),
+            login_streak.longest_streak = GREATEST(login_streak.longest_streak, VALUES(longest_streak)),
+            login_streak.last_login = GREATEST(login_streak.last_login, VALUES(last_login))
     """, (target_uid, platform, source_uid))
     db.cursor.execute(
         "DELETE FROM login_streak WHERE platform = ? AND platform_uid = ?",

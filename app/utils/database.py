@@ -365,6 +365,28 @@ class DatabaseManager:
                 ALTER TABLE user
                 ADD COLUMN IF NOT EXISTS ranking_disabled_reason VARCHAR(255) NULL
             """)
+            # Stable myTeamSpeak account id, captured live from client_myteamspeak_id on
+            # connect. Unlike teamspeak_id (the SHA-1/SHA-256 UID) it is identical across
+            # TS3 and TS6, so it bridges a returning user's old UID to their new one.
+            self.cursor.execute("""
+                ALTER TABLE user
+                ADD COLUMN IF NOT EXISTS myteamspeak_id VARCHAR(255) NULL
+            """)
+            self.cursor.execute("""
+                ALTER TABLE user
+                ADD INDEX IF NOT EXISTS idx_myteamspeak (myteamspeak_id)
+            """)
+            # TeamSpeak 6 UID (SHA-256 fingerprint). Distinct from teamspeak_id, which holds
+            # the legacy TS3 UID (SHA-1). Kept separate so both can coexist during the TS3→TS6
+            # transition (either can identify a user); populated when a user is recognised on TS6.
+            self.cursor.execute("""
+                ALTER TABLE user
+                ADD COLUMN IF NOT EXISTS teamspeak6_id VARCHAR(255) NULL
+            """)
+            self.cursor.execute("""
+                ALTER TABLE user
+                ADD INDEX IF NOT EXISTS idx_teamspeak6 (teamspeak6_id)
+            """)
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS time (
                     platform_uid VARCHAR(255) NOT NULL,
@@ -557,7 +579,203 @@ class DatabaseManager:
         flat_params = [item for pair in params for item in pair]
         self.cursor.execute(query, flat_params)
         self.conn.commit()
-    
+
+    # ------------------------------------------------------------------ #
+    # TS3 -> TS6 identity bridge (Layer 0: myTeamSpeak-id / "mytsid")
+    #
+    # A user's TS UID changes between TS3 (SHA-1) and TS6 (SHA-256), but their
+    # myTeamSpeak account id (client_myteamspeak_id) is identical across both.
+    # Captured live on connect while users are still on TS3, it lets us later
+    # recognise a returning user on TS6 with zero user action. `teamspeak_id`
+    # stays the canonical data key; `teamspeak6_id` is an identification alias.
+    # ------------------------------------------------------------------ #
+    @ensure_connection
+    def capture_myteamspeak_id(self, ts_uid: Union[str, int], myteamspeak_id: Optional[str]) -> bool:
+        """Backfill the stable myTeamSpeak account id for the user identified by a
+        connecting TS UID (TS3 or TS6). No-op if the account id is empty (the user
+        is not logged into myTeamSpeak) or already stored. Returns True if a row
+        was updated."""
+        if not myteamspeak_id:
+            return False
+        ts_uid = str(ts_uid)
+        self.cursor.execute(
+            """
+            UPDATE user
+            SET myteamspeak_id = ?
+            WHERE (teamspeak_id = ? OR teamspeak6_id = ?)
+              AND (myteamspeak_id IS NULL OR myteamspeak_id <> ?)
+            """,
+            (myteamspeak_id, ts_uid, ts_uid, myteamspeak_id),
+        )
+        updated = self.cursor.rowcount > 0
+        self.conn.commit()
+        return updated
+
+    @ensure_connection
+    def find_user_by_myteamspeak_id(self, myteamspeak_id: Optional[str],
+                                    exclude_uid: Optional[Union[str, int]] = None) -> Optional[Tuple]:
+        """Return (id, teamspeak_id, teamspeak6_id) of the historical user row for a
+        myTeamSpeak account, or None. Optionally ignore a row whose teamspeak_id or
+        teamspeak6_id equals exclude_uid (the UID the user is connecting with now),
+        so a match means a *different*, prior identity to bridge to."""
+        if not myteamspeak_id:
+            return None
+        params = [myteamspeak_id]
+        sql = "SELECT id, teamspeak_id, teamspeak6_id FROM user WHERE myteamspeak_id = ?"
+        if exclude_uid is not None:
+            exclude_uid = str(exclude_uid)
+            sql += " AND COALESCE(teamspeak_id, '') <> ? AND COALESCE(teamspeak6_id, '') <> ?"
+            params += [exclude_uid, exclude_uid]
+        sql += " ORDER BY id LIMIT 1"
+        self.cursor.execute(sql, tuple(params))
+        return self.cursor.fetchone()
+
+    def _move_ts_uid_keyed_data(self, source_uid: str, target_uid: str) -> None:
+        """Cursor-level (no commit) move of all teamspeak UID-keyed rows from
+        source_uid onto target_uid: SUM the counters, GREATEST the timestamps/
+        streaks, INSERT IGNORE achievements, then delete the source rows. The
+        source table is aliased in every INSERT..SELECT so the ON DUPLICATE KEY
+        UPDATE column references stay unambiguous (self-referential merge)."""
+        c = self.cursor
+        c.execute("""
+            INSERT INTO time (platform_uid, platform, total_time, daily_time,
+                              weekly_time, monthly_time, season_time, last_update)
+            SELECT ?, platform, total_time, daily_time, weekly_time,
+                   monthly_time, season_time, last_update
+            FROM time src
+            WHERE src.platform = 'teamspeak' AND src.platform_uid = ?
+            ON DUPLICATE KEY UPDATE
+                time.total_time   = time.total_time   + VALUES(total_time),
+                time.daily_time   = time.daily_time   + VALUES(daily_time),
+                time.weekly_time  = time.weekly_time  + VALUES(weekly_time),
+                time.monthly_time = time.monthly_time + VALUES(monthly_time),
+                time.season_time  = time.season_time  + VALUES(season_time),
+                time.last_update  = GREATEST(time.last_update, VALUES(last_update))
+        """, (target_uid, source_uid))
+        c.execute("DELETE FROM time WHERE platform = 'teamspeak' AND platform_uid = ?", (source_uid,))
+
+        c.execute("""
+            INSERT INTO activity_heatmap (platform_uid, platform, day_of_week,
+                                          time_category, activity_minutes, last_update)
+            SELECT ?, platform, day_of_week, time_category, activity_minutes, last_update
+            FROM activity_heatmap src
+            WHERE src.platform = 'teamspeak' AND src.platform_uid = ?
+            ON DUPLICATE KEY UPDATE
+                activity_heatmap.activity_minutes = activity_heatmap.activity_minutes + VALUES(activity_minutes),
+                activity_heatmap.last_update      = GREATEST(activity_heatmap.last_update, VALUES(last_update))
+        """, (target_uid, source_uid))
+        c.execute("DELETE FROM activity_heatmap WHERE platform = 'teamspeak' AND platform_uid = ?", (source_uid,))
+
+        c.execute("""
+            INSERT INTO login_streak (platform_uid, platform, logins,
+                                      current_streak, longest_streak, last_login)
+            SELECT ?, platform, logins, current_streak, longest_streak, last_login
+            FROM login_streak src
+            WHERE src.platform = 'teamspeak' AND src.platform_uid = ?
+            ON DUPLICATE KEY UPDATE
+                login_streak.logins         = login_streak.logins + VALUES(logins),
+                login_streak.current_streak = GREATEST(login_streak.current_streak, VALUES(current_streak)),
+                login_streak.longest_streak = GREATEST(login_streak.longest_streak, VALUES(longest_streak)),
+                login_streak.last_login     = GREATEST(login_streak.last_login, VALUES(last_login))
+        """, (target_uid, source_uid))
+        c.execute("DELETE FROM login_streak WHERE platform = 'teamspeak' AND platform_uid = ?", (source_uid,))
+
+        c.execute("""
+            INSERT IGNORE INTO special_achievements (platform, platform_id, achievement_type, awarded_at)
+            SELECT platform, ?, achievement_type, awarded_at
+            FROM special_achievements src
+            WHERE src.platform = 'teamspeak' AND src.platform_id = ?
+        """, (target_uid, source_uid))
+        c.execute("DELETE FROM special_achievements WHERE platform = 'teamspeak' AND platform_id = ?", (source_uid,))
+
+    def _recalculate_teamspeak_rank(self, user_id: int) -> None:
+        """Cursor-level (no commit) recompute of level/division from a user's total
+        + season time across both platforms."""
+        self.cursor.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN t.platform = 'discord'   THEN t.total_time  ELSE 0 END), 0) +
+                COALESCE(SUM(CASE WHEN t.platform = 'teamspeak' THEN t.total_time  ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN t.platform = 'discord'   THEN t.season_time ELSE 0 END), 0) +
+                COALESCE(SUM(CASE WHEN t.platform = 'teamspeak' THEN t.season_time ELSE 0 END), 0)
+            FROM user u
+            LEFT JOIN time t ON
+                (t.platform = 'discord'   AND t.platform_uid = u.discord_id) OR
+                (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
+            WHERE u.id = ?
+        """, (user_id,))
+        total_time, season_time = self.cursor.fetchone() or (0, 0)
+        self.cursor.execute(
+            "UPDATE user SET level = ?, division = ? WHERE id = ?",
+            (Config.get_level_for_minutes(total_time or 0),
+             Config.get_division_for_minutes(season_time or 0), user_id))
+
+    @ensure_connection
+    def merge_teamspeak_identity(self, canonical_uid: Union[str, int],
+                                 absorbed_uid: Union[str, int]) -> dict:
+        """Absorb the ``absorbed_uid`` TeamSpeak identity (fresh/placeholder row +
+        any accrued UID-keyed data) into the historical ``canonical_uid`` row, so a
+        returning user's perks survive a UID change. Transactional and idempotent.
+
+        Guard: refuses to merge when the two rows are linked to *different* Steam
+        accounts (would fuse two real people)."""
+        canonical_uid, absorbed_uid = str(canonical_uid), str(absorbed_uid)
+        if canonical_uid == absorbed_uid:
+            return {"merged": False, "reason": "same_uid"}
+        try:
+            self.cursor.execute(
+                "SELECT id, steam_id FROM user WHERE teamspeak_id = ? OR teamspeak6_id = ? FOR UPDATE",
+                (canonical_uid, canonical_uid))
+            canon = self.cursor.fetchone()
+            if canon is None:
+                self.conn.rollback()
+                return {"merged": False, "reason": "canonical_not_found"}
+            canon_id, canon_steam = canon
+            self.cursor.execute(
+                "SELECT id, steam_id FROM user WHERE (teamspeak_id = ? OR teamspeak6_id = ?) AND id <> ? FOR UPDATE",
+                (absorbed_uid, absorbed_uid, canon_id))
+            absorbed_rows = self.cursor.fetchall()
+            for _aid, asteam in absorbed_rows:
+                if asteam is not None and canon_steam is not None and str(asteam) != str(canon_steam):
+                    self.conn.rollback()
+                    return {"merged": False, "reason": "cross_account_conflict"}
+            self._move_ts_uid_keyed_data(absorbed_uid, canonical_uid)
+            # Drop the now-empty placeholder user row(s) for the absorbed UID.
+            self.cursor.execute(
+                "DELETE FROM user WHERE (teamspeak_id = ? OR teamspeak6_id = ?) AND id <> ?",
+                (absorbed_uid, absorbed_uid, canon_id))
+            self._recalculate_teamspeak_rank(canon_id)
+            self.conn.commit()
+            return {"merged": True, "canonical_uid": canonical_uid,
+                    "absorbed_uid": absorbed_uid, "user_id": canon_id}
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    @ensure_connection
+    def recognize_teamspeak_client(self, connecting_uid: Union[str, int],
+                                   myteamspeak_id: Optional[str], is_ts6: bool = False) -> dict:
+        """Called on every TS connect. Captures the myTeamSpeak id, and if that
+        account has a prior TS identity under a *different* UID, bridges them:
+        records the new UID (into teamspeak6_id on TS6) and merges history so the
+        user is recognised seamlessly. Returns a summary of what happened."""
+        connecting_uid = str(connecting_uid)
+        self.capture_myteamspeak_id(connecting_uid, myteamspeak_id)
+        prior = self.find_user_by_myteamspeak_id(myteamspeak_id, exclude_uid=connecting_uid)
+        if not prior:
+            return {"recognized": False}
+        pid, prior_ts3, prior_ts6 = prior
+        canonical_uid = prior_ts3 or prior_ts6
+        result = self.merge_teamspeak_identity(canonical_uid, connecting_uid)
+        if is_ts6 and result.get("merged"):
+            # Record the new SHA-256 UID as an alias on the historical row.
+            self.cursor.execute(
+                "UPDATE user SET teamspeak6_id = ? WHERE id = ? AND (teamspeak6_id IS NULL OR teamspeak6_id <> ?)",
+                (connecting_uid, pid, connecting_uid))
+            self.conn.commit()
+        result["recognized"] = result.get("merged", False)
+        result["canonical_uid"] = canonical_uid
+        return result
+
 
     def get_time_category(self, hour: int) -> str:
         """
