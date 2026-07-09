@@ -9,7 +9,7 @@ ranking_stats_bp = Blueprint('ranking_stats', __name__)
 
 @ranking_stats_bp.route('/api/ranking/stats', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_stats():
     db = DatabaseManager()
     users_time_query = """

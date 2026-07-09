@@ -8,7 +8,7 @@ ranking_profile_bp = Blueprint('ranking_profile', __name__)
 
 @ranking_profile_bp.route('/api/ranking/profile', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_ranking():
     try:
         user_id = positive_int_arg(request.args, 'id', 1)

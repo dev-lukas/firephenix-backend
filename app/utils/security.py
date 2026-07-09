@@ -18,7 +18,7 @@ limiter = Limiter(
         "socket_connect_timeout": 30,
     },
     strategy='fixed-window',
-    default_limits=["10 per minute"]
+    default_limits=["60 per minute"]
 )
 
 def login_required(f):

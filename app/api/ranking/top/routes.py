@@ -10,7 +10,7 @@ ranking_top_bp = Blueprint('ranking_top', __name__)
 
 @ranking_top_bp.route('/api/ranking/top', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_top_ranking():
     period = request.args.get('period', 'total')  # 'total', 'weekly', or 'monthly'
     
@@ -60,7 +60,7 @@ def get_top_ranking():
 
 @ranking_top_bp.route('/api/ranking/hall-of-fame', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_hall_of_fame():
     db = DatabaseManager()
 

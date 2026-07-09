@@ -9,7 +9,7 @@ valkey_manager = ValkeyManager()
 ranking_season_bp = Blueprint('ranking_season', __name__)
 
 @ranking_season_bp.route('/api/ranking/season', methods=['GET'])
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 @handle_errors
 def get_ranking():
     try:

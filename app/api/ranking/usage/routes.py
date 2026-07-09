@@ -6,7 +6,7 @@ ranking_usage_bp = Blueprint('ranking_usage', __name__)
 
 @ranking_usage_bp.route('/api/ranking/usage', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_usage():
     period = request.args.get('period', 'daily')
     hours = 24 * 7 if period == 'weekly' else 24

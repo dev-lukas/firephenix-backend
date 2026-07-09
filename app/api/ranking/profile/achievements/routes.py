@@ -12,7 +12,7 @@ user_ranking_profile_achievements_bp = Blueprint('/api/ranking/profile/achieveme
 
 @user_ranking_profile_achievements_bp.route('/api/ranking/profile/achievements', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_achievements():
     try:
         user_id = positive_int_arg(request.args, 'id', 1)
