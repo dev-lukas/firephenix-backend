@@ -70,8 +70,19 @@ jobs:
       smoke_command: .github/ci/firephenix-stack-smoke.sh
     secrets: inherit
 
+  bot-integration:
+    needs: docker-build
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    uses: dev-lukas/ci-cd-actions/.github/workflows/docker-build.yml@main
+    with:
+      image: local/firephenix-backend:${{ github.sha }}
+      image_tags: |
+        registry.lukas-roth.dev/firephenix-backend:${{ github.sha }}
+        registry.lukas-roth.dev/firephenix-backend:latest
+      smoke_command: .github/ci/bot-teamspeak-smoke.sh
+
   publish:
-    needs: integration
+    needs: [integration, bot-integration]
     if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     uses: dev-lukas/ci-cd-actions/.github/workflows/docker-publish.yml@main
     with:
