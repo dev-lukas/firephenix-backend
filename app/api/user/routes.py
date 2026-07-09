@@ -13,7 +13,7 @@ user_bp = Blueprint('/api/user', __name__)
 @user_bp.route('/api/user', methods=['GET'])
 @login_required
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_connected_users():
     steam_id = session.get('steam_id')
 

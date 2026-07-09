@@ -9,7 +9,7 @@ user_online_bp = Blueprint('/api/user/online', __name__)
 
 @user_online_bp.route('/api/user/online', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_connected_users():
     platform = request.args.get('platform')
     if platform not in ['discord', 'teamspeak']:

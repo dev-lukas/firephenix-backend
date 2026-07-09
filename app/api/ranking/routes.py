@@ -10,7 +10,7 @@ ranking_bp = Blueprint('ranking', __name__)
 
 @ranking_bp.route('/api/ranking', methods=['GET'])
 @handle_errors
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def get_ranking():
     try:
         page, limit, search = ranking_request_args(
