@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # End-to-end smoke: the bot must connect to a real TeamSpeak ServerQuery.
 #
-# This is the check that would have caught the Python 3.14 regression: 3.13+
-# removed the stdlib `telnetlib` that the `ts3` library imports, so the bot
-# crashed on startup while the backend and unit tests stayed green. Here we
-# stand up the exact server the bot talks to in production (teamspeak:3.13,
-# raw/telnet ServerQuery) and require the bot to actually connect and run its
-# initial `clientlist` scan against it.
+# This is the check that would have caught the Python 3.14 regression: the
+# bot crashed on startup while the backend and unit tests stayed green. Here
+# we stand up the exact server the bot talks to in production (teamspeak:3.13
+# with SSH ServerQuery enabled, as atsq requires) and require the bot to
+# actually connect and run its initial `clientlist` scan against it.
 set -euo pipefail
 
 bot_image="${IMAGE_UNDER_TEST:?IMAGE_UNDER_TEST is required}"
@@ -60,7 +59,8 @@ services:
     image: teamspeak:3.13
     environment:
       TS3SERVER_LICENSE: accept
-      TS3SERVER_QUERY_PROTOCOLS: raw
+      # raw stays enabled solely for the nc-based healthcheck below
+      TS3SERVER_QUERY_PROTOCOLS: raw,ssh
     volumes:
       - ./query_ip_allowlist.txt:/var/ts3server/query_ip_allowlist.txt
     networks: [itnet]
@@ -83,7 +83,7 @@ services:
       VALKEY_PORT: "6379"
       LIMITER_STORAGE_URI: valkey://valkey:6379
       TS3_HOST: teamspeak
-      TS3_PORT: "10011"
+      TS3_PORT: "10022"
       TS3_PASSWORD: "\${TS3_PASSWORD:-}"
       BOT_RUNNER_PID_FILE: /tmp/bot_runner.pid
     networks: [itnet]
@@ -121,11 +121,12 @@ fi
 echo "Starting bot against the live teamspeak server..."
 TS3_PASSWORD="$ts3_password" $compose up -d bot
 
-# "Initial client scan complete." is emitted (INFO) only after the bot imports
-# ts3, opens the telnet ServerQuery connection, selects the virtual server and
-# runs its first clientlist query -- i.e. it proves a working connection.
+# "Initial client scan complete." is emitted (INFO) only after the bot opens
+# the SSH ServerQuery connection, selects the virtual server, registers for
+# events and runs its first clientlist query -- i.e. it proves a working
+# connection.
 success_marker="Initial client scan complete."
-failure_marker="TS3 connection error"
+failure_marker="connection lost"
 echo "Waiting for the bot to connect (marker: '${success_marker}')..."
 connected=0
 for _ in $(seq 1 30); do
