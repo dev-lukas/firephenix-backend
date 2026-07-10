@@ -116,9 +116,15 @@ class RankingSystem:
                             self.database.update_seasonal_ranks(connected_users, platform)
                             for user_id in connected_users:
                                 if platform == 'discord':
-                                    self.dc.bot.loop.create_task(self.dc.check_ranks(user_id, check_type="both"))
+                                    asyncio.run_coroutine_threadsafe(
+                                        self.dc.check_ranks(user_id, check_type="both"),
+                                        self.dc.bot.loop
+                                    )
                                 elif platform == 'teamspeak':
-                                    self.ts.check_ranks(user_id)
+                                    asyncio.run_coroutine_threadsafe(
+                                        self.ts.check_ranks(user_id),
+                                        self.ts.loop
+                                    )
 
                     except DatabaseConnectionError:
                         logging.error("Database connection error")
@@ -210,7 +216,10 @@ class RankingSystem:
                 user_id = data.get('platform_id')
                 code = data.get('code')
                 if self.dc:
-                    self.dc.bot.loop.create_task(self.dc.send_verification(int(user_id), code))
+                    asyncio.run_coroutine_threadsafe(
+                        self.dc.send_verification(int(user_id), code),
+                        self.dc.bot.loop
+                    )
                     
             elif command == 'create_owned_channel':
                 user_id = data.get('platform_id')
@@ -232,7 +241,10 @@ class RankingSystem:
             elif command == 'check_ranks':
                 user_id = data.get('platform_id')
                 if self.dc:
-                    self.dc.bot.loop.create_task(self.dc.check_ranks(int(user_id)))  
+                    asyncio.run_coroutine_threadsafe(
+                        self.dc.check_ranks(int(user_id)),
+                        self.dc.bot.loop
+                    )
 
             elif command == 'add_move_shield':
                 user_id = data.get('platform_id')
@@ -312,28 +324,40 @@ class RankingSystem:
                 user_id = data.get('platform_id')
                 code = data.get('code')
                 if self.ts:
-                    self.ts.send_verification(user_id, code)
-                    
+                    asyncio.run_coroutine_threadsafe(
+                        self.ts.send_verification(user_id, code),
+                        self.ts.loop
+                    )
+
             elif command == 'create_owned_channel':
                 user_id = data.get('platform_id')
                 channel_name = data.get('channel_name')
                 message_id = data.get('message_id')
-                
+
                 if self.ts:
-                    result = self.ts.create_owned_channel(user_id, channel_name)
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.ts.create_owned_channel(user_id, channel_name),
+                        self.ts.loop
+                    ).result(timeout=30)
                     json_data = json.dumps({'channel_id': result})
                     self.valkey.set(message_id, json_data, ex=30)
 
             elif command == 'check_ranks':
                 user_id = data.get('platform_id')
                 if self.ts:
-                    self.ts.check_ranks(user_id)
+                    asyncio.run_coroutine_threadsafe(
+                        self.ts.check_ranks(user_id),
+                        self.ts.loop
+                    )
 
             elif command == 'add_move_shield':
                 user_id = data.get('platform_id')
                 message_id = data.get('message_id')
                 if self.ts:
-                    response = self.ts.set_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
+                    response = asyncio.run_coroutine_threadsafe(
+                        self.ts.set_server_group(user_id, Config.TS3_MOVE_BLOCK_ID),
+                        self.ts.loop
+                    ).result(timeout=30)
                     result = response.get('ok', False) if isinstance(response, dict) else bool(response)
                     json_data = json.dumps({'result': result, **response} if isinstance(response, dict) else {'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
@@ -342,7 +366,10 @@ class RankingSystem:
                 user_id = data.get('platform_id')
                 message_id = data.get('message_id')
                 if self.ts:
-                    result = self.ts.remove_server_group(user_id, Config.TS3_MOVE_BLOCK_ID)
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.ts.remove_server_group(user_id, Config.TS3_MOVE_BLOCK_ID),
+                        self.ts.loop
+                    ).result(timeout=30)
                     json_data = json.dumps({'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
 
@@ -350,10 +377,16 @@ class RankingSystem:
                 user_id = data.get('platform_id')
                 message_id = data.get('message_id')
                 if self.ts:
-                    response = self.ts.set_server_group(user_id, int(Config.TS3_EXCLUDED_ROLE_ID))
+                    response = asyncio.run_coroutine_threadsafe(
+                        self.ts.set_server_group(user_id, int(Config.TS3_EXCLUDED_ROLE_ID)),
+                        self.ts.loop
+                    ).result(timeout=30)
                     result = response.get('ok', False) if isinstance(response, dict) else bool(response)
                     if result:
-                        self.ts.force_user_validation()
+                        asyncio.run_coroutine_threadsafe(
+                            self.ts.force_user_validation(),
+                            self.ts.loop
+                        )
                     json_data = json.dumps({'result': result, **response} if isinstance(response, dict) else {'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
 
@@ -361,7 +394,10 @@ class RankingSystem:
                 channel_id = data.get('channel_id')
                 message_id = data.get('message_id')
                 if self.ts:
-                    result = self.ts.move_channel_apex(channel_id)
+                    result = asyncio.run_coroutine_threadsafe(
+                        self.ts.move_channel_apex(channel_id),
+                        self.ts.loop
+                    ).result(timeout=30)
                     json_data = json.dumps({'result': result})
                     self.valkey.set(message_id, json_data, ex=30)
 

@@ -51,7 +51,8 @@ class Config:
     DISCORD_EMBER_STICKER=1376678129250074716
     # TeamSpeak
     TS3_HOST=os.getenv("TS3_HOST", "127.0.0.1")
-    TS3_PORT=os.getenv("TS3_PORT", "10011")
+    # SSH ServerQuery port (atsq); the server must have query_ssh enabled
+    TS3_PORT=os.getenv("TS3_PORT", "10022")
     TS3_USERNAME="serveradmin"
     TS3_SERVER_ID="1"
     TS3_EXCLUDED_ROLE_ID="40"

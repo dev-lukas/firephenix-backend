@@ -1,8 +1,9 @@
 [project]
 name = "firephenix-backend"
 version = "0.1.0"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12"
 dependencies = [
+    "atsq>=1.0.0a4",
     "discord.py",
     "flask",
     "flask-cors",
@@ -12,7 +13,6 @@ dependencies = [
     "psutil",
     "python-dotenv",
     "requests>=2.28.0",
-    "ts3>=2.0.0b2",
     "valkey[libvalkey]",
 ]
 
