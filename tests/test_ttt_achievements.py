@@ -183,7 +183,7 @@ class FakeUserDatabase:
             return []
         if "FROM unlockables" in query:
             return []
-        if "WHERE u.steam_id = ?" in query:
+        if "WHERE u.steam_id = %s" in query:
             return [self.user_row] if self.user_row else []
         return []
 
@@ -273,7 +273,7 @@ class FakeAchievementDatabase:
             return []
         if "FROM special_achievements" in query:
             return []
-        if "WHERE u.id = ?" in query:
+        if "WHERE u.id = %s" in query:
             return [("76561198000000000", "discord-id", "teamspeak-id", 600)]
         return []
 

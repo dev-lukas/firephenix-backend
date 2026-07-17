@@ -48,7 +48,7 @@ def get_connected_users():
         LEFT JOIN time t ON 
             (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
             (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
-        WHERE u.steam_id = ?
+        WHERE u.steam_id = %s
         GROUP BY u.name, u.discord_id, u.teamspeak_id, u.level,
                  u.division, u.discord_channel, u.teamspeak_channel
     """
@@ -70,7 +70,7 @@ def get_connected_users():
             WHERE platform IN ('discord', 'teamspeak')
         ) h ON (h.platform = 'discord' AND h.platform_uid = u.discord_id)
                 OR (h.platform = 'teamspeak' AND h.platform_uid = u.teamspeak_id)
-        WHERE u.steam_id = ?
+        WHERE u.steam_id = %s
             AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
         GROUP BY h.day_of_week, h.time_category
         ORDER BY h.day_of_week, 
@@ -151,8 +151,8 @@ def get_connected_users():
             current_streak,
             longest_streak
         FROM login_streak
-        WHERE (platform = 'discord' AND platform_uid = ?)
-           OR (platform = 'teamspeak' AND platform_uid = ?)
+        WHERE (platform = 'discord' AND platform_uid = %s)
+           OR (platform = 'teamspeak' AND platform_uid = %s)
         """
         
         streak_data = db.execute_query(streak_query, (discord_id, teamspeak_id))
@@ -200,8 +200,8 @@ def get_connected_users():
         special_achievements_query = """
         SELECT achievement_type
         FROM special_achievements
-        WHERE (platform = 'discord' AND platform_id = ?)
-           OR (platform = 'teamspeak' AND platform_id = ?)
+        WHERE (platform = 'discord' AND platform_id = %s)
+           OR (platform = 'teamspeak' AND platform_id = %s)
         """
 
         special_achievements_params = []
@@ -248,7 +248,7 @@ def get_connected_users():
 
         unlockable_query = """SELECT platform, unlockable_type
         FROM unlockables
-        WHERE steam_id = ?
+        WHERE steam_id = %s
         """
         unlockable_data = db.execute_query(unlockable_query, (steam_id,))
         if unlockable_data:

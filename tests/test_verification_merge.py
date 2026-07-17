@@ -27,9 +27,9 @@ class FakeCursor:
 
     def fetchall(self):
         query = self.queries[-1][0]
-        if "FROM user" in query and "WHERE steam_id = ?" in query:
+        if "FROM user" in query and "WHERE steam_id = %s" in query:
             return self.db.existing_users
-        if "FROM user" in query and "_id = ?" in query:
+        if "FROM user" in query and "_id = %s" in query:
             return self.db.merge_users
         return []
 

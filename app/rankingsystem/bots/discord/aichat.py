@@ -566,7 +566,7 @@ async def fetch_user_info_string(id):
             LEFT JOIN time t ON
                 (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
                 (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
-            WHERE discord_id = ?
+            WHERE discord_id = %s
             GROUP BY u.name, u.discord_id, u.teamspeak_id, u.level,
                     u.division, u.discord_channel, u.teamspeak_channel
         """

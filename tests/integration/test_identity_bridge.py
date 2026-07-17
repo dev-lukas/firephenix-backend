@@ -47,13 +47,13 @@ class IdentityBridgeTests(unittest.TestCase):
 
     def _user_row(self, user_id):
         self.db.cursor.execute(
-            "SELECT teamspeak_id, teamspeak6_id, myteamspeak_id, level FROM user WHERE id = ?",
+            "SELECT teamspeak_id, teamspeak6_id, myteamspeak_id, level FROM user WHERE id = %s",
             (user_id,))
         return self.db.cursor.fetchone()
 
     def _time_total(self, uid):
         self.db.cursor.execute(
-            "SELECT total_time FROM time WHERE platform='teamspeak' AND platform_uid = ?",
+            "SELECT total_time FROM time WHERE platform='teamspeak' AND platform_uid = %s",
             (uid,))
         row = self.db.cursor.fetchone()
         return row[0] if row else None
@@ -105,9 +105,9 @@ class IdentityBridgeTests(unittest.TestCase):
         self.assertTrue(result["recognized"])
         self.assertEqual(result["canonical_uid"], "OLD-UID")
         # Placeholder row is gone; history survives on the canonical row.
-        self.db.cursor.execute("SELECT COUNT(*) FROM user WHERE id = ?", (new_id,))
+        self.db.cursor.execute("SELECT COUNT(*) FROM user WHERE id = %s", (new_id,))
         self.assertEqual(self.db.cursor.fetchone()[0], 0)
-        self.db.cursor.execute("SELECT COUNT(*) FROM user WHERE id = ?", (old_id,))
+        self.db.cursor.execute("SELECT COUNT(*) FROM user WHERE id = %s", (old_id,))
         self.assertEqual(self.db.cursor.fetchone()[0], 1)
         # Time summed onto canonical, source removed.
         self.assertEqual(self._time_total("OLD-UID"), 1005)
@@ -142,7 +142,7 @@ class IdentityBridgeTests(unittest.TestCase):
         self.assertFalse(result["merged"])
         self.assertEqual(result["reason"], "cross_account_conflict")
         # Nothing moved or deleted.
-        self.db.cursor.execute("SELECT COUNT(*) FROM user WHERE id = ?", (other,))
+        self.db.cursor.execute("SELECT COUNT(*) FROM user WHERE id = %s", (other,))
         self.assertEqual(self.db.cursor.fetchone()[0], 1)
         self.assertEqual(self._time_total("OTHER"), 42)
 

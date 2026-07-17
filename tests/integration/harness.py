@@ -76,7 +76,7 @@ def seed_user(db, *, steam_id=None, discord_id=None, teamspeak_id=None,
         """
         INSERT INTO user (steam_id, discord_id, teamspeak_id, name, level,
                           division, ranking_disabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
         (steam_id, discord_id, teamspeak_id, name, level, division,
          ranking_disabled),
@@ -92,7 +92,7 @@ def seed_time(db, *, platform, platform_uid, total_time=0, daily_time=0,
         """
         INSERT INTO time (platform_uid, platform, total_time, daily_time,
                           weekly_time, monthly_time, season_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
         (platform_uid, platform, total_time, daily_time, weekly_time,
          monthly_time, season_time),
@@ -104,7 +104,7 @@ def seed_special_achievement(db, *, platform, platform_id, achievement_type):
     db.cursor.execute(
         """
         INSERT INTO special_achievements (platform, platform_id, achievement_type)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
         """,
         (platform, platform_id, achievement_type),
     )
@@ -200,4 +200,5 @@ class IntegrationTestCase(unittest.TestCase):
         first so committed writes from the app's own connections are seen."""
         self.db.conn.rollback()
         self.db.cursor.execute(query, params or ())
-        return self.db.cursor.fetchall()
+        # PyMySQL returns a tuple of rows; tests compare against lists
+        return list(self.db.cursor.fetchall())

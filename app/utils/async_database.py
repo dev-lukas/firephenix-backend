@@ -104,7 +104,8 @@ class AsyncDatabaseManager:
             async with conn.cursor() as cur:
                 await cur.execute(query, params or None)
                 if query.strip().upper().startswith(("SELECT", "WITH")):
-                    return await cur.fetchall()
+                    # asyncmy returns a tuple of rows; keep the list contract
+                    return list(await cur.fetchall())
                 return None
 
         return await self._run(op)

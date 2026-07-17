@@ -26,7 +26,7 @@ def create_channel():
     db = DatabaseManager()
     query = f"""SELECT level, name, discord_id, teamspeak_id, {platform}_channel
     FROM user
-    WHERE steam_id = ? AND steam_id IS NOT NULL
+    WHERE steam_id = %s AND steam_id IS NOT NULL
     """
 
     db.cursor.execute(query, (steam_id,))
@@ -56,8 +56,8 @@ def create_channel():
 
     db.execute_query(f"""
         UPDATE user
-        SET {platform}_channel = ?
-        WHERE steam_id = ?
+        SET {platform}_channel = %s
+        WHERE steam_id = %s
     """, (channel_id, steam_id,))
 
     db.close()

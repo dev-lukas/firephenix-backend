@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional, Set, Tuple, Union, Callable, Iterable
-import mariadb
+import pymysql
 from app.utils.logger import RankingLogger
 from app.config import Config
 
@@ -293,8 +293,8 @@ class DatabaseManager:
     The bot-side business methods (time/rank/streak tracking, season close,
     the TS3->TS6 identity bridge, TTT ingest) live in
     ``app.utils.async_database.AsyncDatabaseManager`` — the bot process runs
-    on one asyncio loop and must not block on mariadb. Placeholders here are
-    ``?`` (mariadb connector); the async manager uses ``%s`` (asyncmy).
+    on one asyncio loop and must not block on the database. Both managers use
+    PyMySQL-family drivers, so placeholders are ``%s`` everywhere.
     """
 
     def __init__(self):
@@ -308,18 +308,19 @@ class DatabaseManager:
             if self.conn:
                 self.close()
             
-            self.conn = mariadb.connect(
+            # autocommit stays off (PyMySQL default); note: conn.autocommit is
+            # a METHOD in PyMySQL, never assign to it
+            self.conn = pymysql.connect(
                 host=Config.DB_HOST,
                 port=int(Config.DB_PORT),
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
                 database=Config.DB_NAME,
             )
-            self.conn.autocommit = False
             self.cursor = self.conn.cursor()
             self.create_tables()
             return True
-        except mariadb.Error as e:
+        except pymysql.Error as e:
             logging.error(f"Error connecting to database: {e}")
             return False
 
@@ -331,7 +332,7 @@ class DatabaseManager:
                     raise DatabaseConnectionError("No database connection available")
             try:
                 return func(self, *args, **kwargs)
-            except (mariadb.Error, AttributeError):
+            except (pymysql.Error, AttributeError):
                 if self.connect():
                     return func(self, *args, **kwargs)
                 raise DatabaseConnectionError("Failed to reconnect to database")
@@ -542,7 +543,7 @@ class DatabaseManager:
             """)
 
             self.conn.commit()
-        except mariadb.Error as e:
+        except pymysql.Error as e:
             logging.error(f"Error creating tables: {e}")
             self.conn.rollback()
             raise
@@ -560,7 +561,8 @@ class DatabaseManager:
             
         query_type = query.strip().upper()
         if query_type.startswith('SELECT') or query_type.startswith('WITH'):
-            return self.cursor.fetchall()
+            # PyMySQL returns a tuple of rows; keep the list contract callers rely on
+            return list(self.cursor.fetchall())
         else:
             self.conn.commit()
             return None
@@ -578,7 +580,7 @@ class DatabaseManager:
         query = f"""
             SELECT discord_id, teamspeak_id
             FROM user
-            WHERE {id_column} = ?
+            WHERE {id_column} = %s
         """
         self.cursor.execute(query, (str(platform_id),))
         result = self.cursor.fetchone()
@@ -603,7 +605,7 @@ class DatabaseManager:
                 deaths,
                 last_played_at
             FROM ttt_player_stats
-            WHERE steam_id = ?
+            WHERE steam_id = %s
         """, (steam_id,))
         return ttt_stats_from_row(self.cursor.fetchone(), steam_id)
 
@@ -614,5 +616,5 @@ class DatabaseManager:
                 self.cursor.close()
             if self.conn:
                 self.conn.close()
-        except mariadb.Error as e:
+        except pymysql.Error as e:
             logging.error(f"Error closing database connection: {e}")
