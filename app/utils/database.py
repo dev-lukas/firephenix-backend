@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional, Set, Tuple, Union, Callable, Iterable
-import mariadb
+import pymysql
 from app.utils.logger import RankingLogger
 from app.config import Config
 
@@ -288,6 +288,15 @@ class DatabaseConnectionError(Exception):
         super().__init__(message)
 
 class DatabaseManager:
+    """Synchronous manager for the Flask API (gunicorn workers are sync).
+
+    The bot-side business methods (time/rank/streak tracking, season close,
+    the TS3->TS6 identity bridge, TTT ingest) live in
+    ``app.utils.async_database.AsyncDatabaseManager`` — the bot process runs
+    on one asyncio loop and must not block on the database. Both managers use
+    PyMySQL-family drivers, so placeholders are ``%s`` everywhere.
+    """
+
     def __init__(self):
         self.conn = None
         self.cursor = None
@@ -299,18 +308,19 @@ class DatabaseManager:
             if self.conn:
                 self.close()
             
-            self.conn = mariadb.connect(
+            # autocommit stays off (PyMySQL default); note: conn.autocommit is
+            # a METHOD in PyMySQL, never assign to it
+            self.conn = pymysql.connect(
                 host=Config.DB_HOST,
                 port=int(Config.DB_PORT),
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
                 database=Config.DB_NAME,
             )
-            self.conn.autocommit = False
             self.cursor = self.conn.cursor()
             self.create_tables()
             return True
-        except mariadb.Error as e:
+        except pymysql.Error as e:
             logging.error(f"Error connecting to database: {e}")
             return False
 
@@ -322,7 +332,7 @@ class DatabaseManager:
                     raise DatabaseConnectionError("No database connection available")
             try:
                 return func(self, *args, **kwargs)
-            except (mariadb.Error, AttributeError):
+            except (pymysql.Error, AttributeError):
                 if self.connect():
                     return func(self, *args, **kwargs)
                 raise DatabaseConnectionError("Failed to reconnect to database")
@@ -533,7 +543,7 @@ class DatabaseManager:
             """)
 
             self.conn.commit()
-        except mariadb.Error as e:
+        except pymysql.Error as e:
             logging.error(f"Error creating tables: {e}")
             self.conn.rollback()
             raise
@@ -551,621 +561,11 @@ class DatabaseManager:
             
         query_type = query.strip().upper()
         if query_type.startswith('SELECT') or query_type.startswith('WITH'):
-            return self.cursor.fetchall()
+            # PyMySQL returns a tuple of rows; keep the list contract callers rely on
+            return list(self.cursor.fetchall())
         else:
             self.conn.commit()
             return None
-
-    @ensure_connection 
-    def update_times(self, platform_uids: Set[Union[int, str]], platform: str) -> None:
-        """Batch update time values for multiple users"""
-        if not platform_uids:
-            return
-            
-        unique_uids = [str(uid) for uid in platform_uids]
-        params = [(uid,platform) for uid in unique_uids]
-        query = f"""
-            INSERT INTO time (platform_uid, platform, total_time, daily_time,
-                            weekly_time, monthly_time, season_time, last_update)
-            VALUES {','.join(['(?, ?, 1, 1, 1, 1, 1, CURRENT_TIMESTAMP)'] * len(platform_uids))}
-            ON DUPLICATE KEY UPDATE
-                total_time = total_time + 1,
-                daily_time = daily_time + 1,
-                weekly_time = weekly_time + 1,
-                monthly_time = monthly_time + 1,
-                season_time = season_time + 1,
-                last_update = CURRENT_TIMESTAMP
-        """
-        flat_params = [item for pair in params for item in pair]
-        self.cursor.execute(query, flat_params)
-        self.conn.commit()
-
-    # ------------------------------------------------------------------ #
-    # TS3 -> TS6 identity bridge (Layer 0: myTeamSpeak-id / "mytsid")
-    #
-    # A user's TS UID changes between TS3 (SHA-1) and TS6 (SHA-256), but their
-    # myTeamSpeak account id (client_myteamspeak_id) is identical across both.
-    # Captured live on connect while users are still on TS3, it lets us later
-    # recognise a returning user on TS6 with zero user action. `teamspeak_id`
-    # stays the canonical data key; `teamspeak6_id` is an identification alias.
-    # ------------------------------------------------------------------ #
-    @ensure_connection
-    def capture_myteamspeak_id(self, ts_uid: Union[str, int], myteamspeak_id: Optional[str]) -> bool:
-        """Backfill the stable myTeamSpeak account id for the user identified by a
-        connecting TS UID (TS3 or TS6). No-op if the account id is empty (the user
-        is not logged into myTeamSpeak) or already stored. Returns True if a row
-        was updated."""
-        if not myteamspeak_id:
-            return False
-        ts_uid = str(ts_uid)
-        self.cursor.execute(
-            """
-            UPDATE user
-            SET myteamspeak_id = ?
-            WHERE (teamspeak_id = ? OR teamspeak6_id = ?)
-              AND (myteamspeak_id IS NULL OR myteamspeak_id <> ?)
-            """,
-            (myteamspeak_id, ts_uid, ts_uid, myteamspeak_id),
-        )
-        updated = self.cursor.rowcount > 0
-        self.conn.commit()
-        return updated
-
-    @ensure_connection
-    def find_user_by_myteamspeak_id(self, myteamspeak_id: Optional[str],
-                                    exclude_uid: Optional[Union[str, int]] = None) -> Optional[Tuple]:
-        """Return (id, teamspeak_id, teamspeak6_id) of the historical user row for a
-        myTeamSpeak account, or None. Optionally ignore a row whose teamspeak_id or
-        teamspeak6_id equals exclude_uid (the UID the user is connecting with now),
-        so a match means a *different*, prior identity to bridge to."""
-        if not myteamspeak_id:
-            return None
-        params = [myteamspeak_id]
-        sql = "SELECT id, teamspeak_id, teamspeak6_id FROM user WHERE myteamspeak_id = ?"
-        if exclude_uid is not None:
-            exclude_uid = str(exclude_uid)
-            sql += " AND COALESCE(teamspeak_id, '') <> ? AND COALESCE(teamspeak6_id, '') <> ?"
-            params += [exclude_uid, exclude_uid]
-        sql += " ORDER BY id LIMIT 1"
-        self.cursor.execute(sql, tuple(params))
-        return self.cursor.fetchone()
-
-    def _move_ts_uid_keyed_data(self, source_uid: str, target_uid: str) -> None:
-        """Cursor-level (no commit) move of all teamspeak UID-keyed rows from
-        source_uid onto target_uid: SUM the counters, GREATEST the timestamps/
-        streaks, INSERT IGNORE achievements, then delete the source rows. The
-        source table is aliased in every INSERT..SELECT so the ON DUPLICATE KEY
-        UPDATE column references stay unambiguous (self-referential merge)."""
-        c = self.cursor
-        c.execute("""
-            INSERT INTO time (platform_uid, platform, total_time, daily_time,
-                              weekly_time, monthly_time, season_time, last_update)
-            SELECT ?, platform, total_time, daily_time, weekly_time,
-                   monthly_time, season_time, last_update
-            FROM time src
-            WHERE src.platform = 'teamspeak' AND src.platform_uid = ?
-            ON DUPLICATE KEY UPDATE
-                time.total_time   = time.total_time   + VALUES(total_time),
-                time.daily_time   = time.daily_time   + VALUES(daily_time),
-                time.weekly_time  = time.weekly_time  + VALUES(weekly_time),
-                time.monthly_time = time.monthly_time + VALUES(monthly_time),
-                time.season_time  = time.season_time  + VALUES(season_time),
-                time.last_update  = GREATEST(time.last_update, VALUES(last_update))
-        """, (target_uid, source_uid))
-        c.execute("DELETE FROM time WHERE platform = 'teamspeak' AND platform_uid = ?", (source_uid,))
-
-        c.execute("""
-            INSERT INTO activity_heatmap (platform_uid, platform, day_of_week,
-                                          time_category, activity_minutes, last_update)
-            SELECT ?, platform, day_of_week, time_category, activity_minutes, last_update
-            FROM activity_heatmap src
-            WHERE src.platform = 'teamspeak' AND src.platform_uid = ?
-            ON DUPLICATE KEY UPDATE
-                activity_heatmap.activity_minutes = activity_heatmap.activity_minutes + VALUES(activity_minutes),
-                activity_heatmap.last_update      = GREATEST(activity_heatmap.last_update, VALUES(last_update))
-        """, (target_uid, source_uid))
-        c.execute("DELETE FROM activity_heatmap WHERE platform = 'teamspeak' AND platform_uid = ?", (source_uid,))
-
-        c.execute("""
-            INSERT INTO login_streak (platform_uid, platform, logins,
-                                      current_streak, longest_streak, last_login)
-            SELECT ?, platform, logins, current_streak, longest_streak, last_login
-            FROM login_streak src
-            WHERE src.platform = 'teamspeak' AND src.platform_uid = ?
-            ON DUPLICATE KEY UPDATE
-                login_streak.logins         = login_streak.logins + VALUES(logins),
-                login_streak.current_streak = GREATEST(login_streak.current_streak, VALUES(current_streak)),
-                login_streak.longest_streak = GREATEST(login_streak.longest_streak, VALUES(longest_streak)),
-                login_streak.last_login     = GREATEST(login_streak.last_login, VALUES(last_login))
-        """, (target_uid, source_uid))
-        c.execute("DELETE FROM login_streak WHERE platform = 'teamspeak' AND platform_uid = ?", (source_uid,))
-
-        c.execute("""
-            INSERT IGNORE INTO special_achievements (platform, platform_id, achievement_type, awarded_at)
-            SELECT platform, ?, achievement_type, awarded_at
-            FROM special_achievements src
-            WHERE src.platform = 'teamspeak' AND src.platform_id = ?
-        """, (target_uid, source_uid))
-        c.execute("DELETE FROM special_achievements WHERE platform = 'teamspeak' AND platform_id = ?", (source_uid,))
-
-    def _recalculate_teamspeak_rank(self, user_id: int) -> None:
-        """Cursor-level (no commit) recompute of level/division from a user's total
-        + season time across both platforms."""
-        self.cursor.execute("""
-            SELECT
-                COALESCE(SUM(CASE WHEN t.platform = 'discord'   THEN t.total_time  ELSE 0 END), 0) +
-                COALESCE(SUM(CASE WHEN t.platform = 'teamspeak' THEN t.total_time  ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN t.platform = 'discord'   THEN t.season_time ELSE 0 END), 0) +
-                COALESCE(SUM(CASE WHEN t.platform = 'teamspeak' THEN t.season_time ELSE 0 END), 0)
-            FROM user u
-            LEFT JOIN time t ON
-                (t.platform = 'discord'   AND t.platform_uid = u.discord_id) OR
-                (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
-            WHERE u.id = ?
-        """, (user_id,))
-        total_time, season_time = self.cursor.fetchone() or (0, 0)
-        self.cursor.execute(
-            "UPDATE user SET level = ?, division = ? WHERE id = ?",
-            (Config.get_level_for_minutes(total_time or 0),
-             Config.get_division_for_minutes(season_time or 0), user_id))
-
-    @ensure_connection
-    def merge_teamspeak_identity(self, canonical_uid: Union[str, int],
-                                 absorbed_uid: Union[str, int]) -> dict:
-        """Absorb the ``absorbed_uid`` TeamSpeak identity (fresh/placeholder row +
-        any accrued UID-keyed data) into the historical ``canonical_uid`` row, so a
-        returning user's perks survive a UID change. Transactional and idempotent.
-
-        Guard: refuses to merge when the two rows are linked to *different* Steam
-        accounts (would fuse two real people)."""
-        canonical_uid, absorbed_uid = str(canonical_uid), str(absorbed_uid)
-        if canonical_uid == absorbed_uid:
-            return {"merged": False, "reason": "same_uid"}
-        try:
-            self.cursor.execute(
-                "SELECT id, steam_id FROM user WHERE teamspeak_id = ? OR teamspeak6_id = ? FOR UPDATE",
-                (canonical_uid, canonical_uid))
-            canon = self.cursor.fetchone()
-            if canon is None:
-                self.conn.rollback()
-                return {"merged": False, "reason": "canonical_not_found"}
-            canon_id, canon_steam = canon
-            self.cursor.execute(
-                "SELECT id, steam_id FROM user WHERE (teamspeak_id = ? OR teamspeak6_id = ?) AND id <> ? FOR UPDATE",
-                (absorbed_uid, absorbed_uid, canon_id))
-            absorbed_rows = self.cursor.fetchall()
-            for _aid, asteam in absorbed_rows:
-                if asteam is not None and canon_steam is not None and str(asteam) != str(canon_steam):
-                    self.conn.rollback()
-                    return {"merged": False, "reason": "cross_account_conflict"}
-            self._move_ts_uid_keyed_data(absorbed_uid, canonical_uid)
-            # Drop the now-empty placeholder user row(s) for the absorbed UID.
-            self.cursor.execute(
-                "DELETE FROM user WHERE (teamspeak_id = ? OR teamspeak6_id = ?) AND id <> ?",
-                (absorbed_uid, absorbed_uid, canon_id))
-            self._recalculate_teamspeak_rank(canon_id)
-            self.conn.commit()
-            return {"merged": True, "canonical_uid": canonical_uid,
-                    "absorbed_uid": absorbed_uid, "user_id": canon_id}
-        except Exception:
-            self.conn.rollback()
-            raise
-
-    @ensure_connection
-    def recognize_teamspeak_client(self, connecting_uid: Union[str, int],
-                                   myteamspeak_id: Optional[str], is_ts6: bool = False) -> dict:
-        """Called on every TS connect. Captures the myTeamSpeak id, and if that
-        account has a prior TS identity under a *different* UID, bridges them:
-        records the new UID (into teamspeak6_id on TS6) and merges history so the
-        user is recognised seamlessly. Returns a summary of what happened."""
-        connecting_uid = str(connecting_uid)
-        self.capture_myteamspeak_id(connecting_uid, myteamspeak_id)
-        prior = self.find_user_by_myteamspeak_id(myteamspeak_id, exclude_uid=connecting_uid)
-        if not prior:
-            return {"recognized": False}
-        pid, prior_ts3, prior_ts6 = prior
-        canonical_uid = prior_ts3 or prior_ts6
-        result = self.merge_teamspeak_identity(canonical_uid, connecting_uid)
-        if is_ts6 and result.get("merged"):
-            # Record the new SHA-256 UID as an alias on the historical row.
-            self.cursor.execute(
-                "UPDATE user SET teamspeak6_id = ? WHERE id = ? AND (teamspeak6_id IS NULL OR teamspeak6_id <> ?)",
-                (connecting_uid, pid, connecting_uid))
-            self.conn.commit()
-        result["recognized"] = result.get("merged", False)
-        result["canonical_uid"] = canonical_uid
-        return result
-
-
-    def get_time_category(self, hour: int) -> str:
-        """
-        Categorize an hour into time categories
-        morning: 6-11 (6:00 AM - 11:59 AM)
-        noon: 12-17 (12:00 PM - 5:59 PM)
-        evening: 18-23 (6:00 PM - 11:59 PM)
-        night: 0-5 (12:00 AM - 5:59 AM)
-        """
-        if 6 <= hour < 12:
-            return 'morning'
-        elif 12 <= hour < 18:
-            return 'noon'
-        elif 18 <= hour < 24:
-            return 'evening'
-        else:
-            return 'night'
-            
-    @ensure_connection
-    def update_heatmap(self, platform_uids: Set[Union[int, str]], platform: str):
-        """
-        Update the activity heatmap for multiple platform UIDs
-        
-        Args:
-            platform: Platform name ('discord' or 'teamspeak')
-            platform_uids: Set of platform user IDs
-        """
-        if not platform_uids:
-            return
-            
-        now = datetime.now()
-        day_of_week = now.weekday()
-        time_category = self.get_time_category(now.hour)
-        
-        values = []
-        for uid in platform_uids:
-            values.append((str(uid), platform, day_of_week, time_category))
-        
-        if not values:
-            return
-            
-        self.cursor.executemany("""
-            INSERT INTO activity_heatmap 
-                (platform_uid, platform, day_of_week, time_category, activity_minutes)
-            VALUES (?, ?, ?, ?, 1)
-            ON DUPLICATE KEY UPDATE
-                activity_minutes = activity_minutes + 1,
-                last_update = CURRENT_TIMESTAMP
-        """, values)
-        self.conn.commit()
-
-    @ensure_connection
-    def update_ranks(self, users: Set[Union[int, str]], platform: str) -> List[Tuple[Union[int, str], int]]:
-        rankups = []
-        
-        user_ids = list(users)
-        
-        if not user_ids:
-            return rankups
-
-        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
-
-        placeholders = ','.join(['?'] * len(user_ids))
-        query = f"""
-            SELECT 
-                u.{id_column},
-                COALESCE(d.total_time, 0) + COALESCE(t.total_time, 0) AS total_time,
-                u.level
-            FROM user u
-            LEFT JOIN time d 
-                ON d.platform = 'discord' 
-                AND d.platform_uid = u.discord_id
-            LEFT JOIN time t 
-                ON t.platform = 'teamspeak' 
-                AND t.platform_uid = u.teamspeak_id
-            WHERE COALESCE(u.ranking_disabled, 0) = 0
-                AND u.{id_column} IN ({placeholders})
-        """
-        
-        self.cursor.execute(query, user_ids)
-        results = self.cursor.fetchall()
-
-        for platform_uid, total_time, level in results:
-            calculated_level = Config.get_level_for_minutes(total_time)
-            if calculated_level != level:
-                update_query = f"""
-                    UPDATE user
-                    SET level = ?
-                    WHERE {id_column} = ?
-                """
-                self.cursor.execute(update_query, 
-                                (calculated_level, platform_uid))
-                rankups.append((platform_uid, calculated_level))
-
-        self.conn.commit()
-
-        return rankups
-    
-    @ensure_connection
-    def update_seasonal_ranks(self, users: Set[Union[int, str]], platform: str) -> List[Tuple[Union[int, str], int]]:
-        rankups = []
-        
-        user_ids = list(users)
-        
-        if not user_ids:
-            return rankups
-
-        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
-
-        placeholders = ','.join(['?'] * len(user_ids))
-        query = f"""
-            SELECT 
-                u.{id_column},
-                COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time,
-                u.division
-            FROM user u
-            LEFT JOIN time d 
-                ON d.platform = 'discord' 
-                AND d.platform_uid = u.discord_id
-            LEFT JOIN time t 
-                ON t.platform = 'teamspeak' 
-                AND t.platform_uid = u.teamspeak_id
-            WHERE COALESCE(u.ranking_disabled, 0) = 0
-                AND u.{id_column} IN ({placeholders})
-        """
-        
-        self.cursor.execute(query, user_ids)
-        results = self.cursor.fetchall()
-
-        for platform_uid, season_time, division in results:
-            calculated_division = Config.get_division_for_minutes(season_time)
-            if calculated_division != division and division <= 5:
-                update_query = f"""
-                    UPDATE user
-                    SET division = ?
-                    WHERE {id_column} = ?
-                """
-                self.cursor.execute(update_query, 
-                                (calculated_division, platform_uid))
-                rankups.append((platform_uid, calculated_division))
-                logging.debug(f"Updated {platform} user {platform_uid} to division {calculated_division}")
-
-        rankups = self._update_top_division_ranks(platform, rankups)
-
-        self.conn.commit()
-
-        if rankups:
-            logging.debug(f"Rank updates for {platform} users: {rankups}")
-        return rankups
-
-    @ensure_connection
-    def _update_top_division_ranks(self, platform: str, rankups: List[Tuple[Union[int, str], int]]) -> List[Tuple[Union[int, str], int]]:
-        """
-        Update the top division (Division 6) based on season time.
-        Only the top Config.TOP_DIVISION_PLAYER_AMOUNT players can be in Division 6.
-        """
-        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
-
-        self.cursor.execute(f"""
-            SELECT u.id, u.{id_column}, COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time, u.division
-            FROM user u
-            LEFT JOIN time d ON d.platform = 'discord' AND d.platform_uid = u.discord_id
-            LEFT JOIN time t ON t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id
-            WHERE COALESCE(u.ranking_disabled, 0) = 0
-                AND u.division IN (5, 6) AND u.{id_column} IS NOT NULL
-            ORDER BY season_time DESC
-            LIMIT {Config.TOP_DIVISION_PLAYER_AMOUNT * 2}
-        """)
-        all_players = self.cursor.fetchall()
-        
-        for idx, (user_id, platform_uid, season_time, current_division) in enumerate(all_players):
-            target_division = 6 if idx < Config.TOP_DIVISION_PLAYER_AMOUNT else 5
-            
-            if current_division != target_division:
-                self.cursor.execute("""
-                    UPDATE user SET division = ? WHERE id = ?
-                """, (target_division, user_id))
-                
-                if target_division == 6:
-                    logging.debug(f"Promoted user {platform_uid} to Division 6")
-                    rankups.append((platform_uid, 6))
-                else:
-                    logging.debug(f"Demoted user {platform_uid} to Division 5")
-                    rankups.append((platform_uid, 5))
-        
-        self.conn.commit()
-        return rankups
-    
-    @ensure_connection
-    def update_user_name(self, user_id: str, name: str, platform: str) -> None:
-        """
-        Insert user if not exists, update name if changed
-        platform should be either 'discord' or 'teamspeak'
-        """
-        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
-        query = f"""
-            INSERT INTO user
-                ({id_column}, name, created_at) 
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON DUPLICATE KEY UPDATE 
-                name = VALUES(name)
-        """
-        self.execute_query(query, (str(user_id), name))
-
-    @ensure_connection
-    def log_usage_stats(self, user_count: int, platform: str) -> None:
-        query = """
-            INSERT INTO usage_stats (timestamp, user_count, platform)
-            VALUES (DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00'), ?, ?)
-        """
-        self.execute_query(query, (user_count, platform))
-
-    @ensure_connection
-    def get_user_roles(self, user_id: Union[int, str], platform: str) -> Tuple[Optional[int], Optional[int]]:
-        """
-        Get the rank (level) of a user based on their TeamSpeak or Discord ID.
-        Forces fresh results by ensuring any pending transactions are committed.
-
-        Args:
-            user_id: The user's unique identifier (TeamSpeak UID or Discord ID)
-            platform: The platform ('discord' or 'teamspeak')
-
-        Returns:
-            Tuple[Optional[int], Optional[int]]: The user's (level, division) or (None, None) if not found
-        """
-        id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
-
-        # Force fresh data by committing any pending transactions
-        if not self.conn.autocommit:
-            self.conn.commit()
-
-        query = f"""
-            SELECT level, division
-            FROM user
-            WHERE {id_column} = ?
-                AND COALESCE(ranking_disabled, 0) = 0
-        """
-        self.cursor.execute(query, (str(user_id),))
-        
-        result = self.cursor.fetchone()
-        return result if result else (None, None)
-
-    @ensure_connection
-    def update_login_streak(self, platform_uid: str, platform: str) -> None:
-        """Update login streak for a user"""
-        self.cursor.execute("""
-            SELECT current_streak, longest_streak, last_login 
-            FROM login_streak 
-            WHERE platform = ? AND platform_uid = ?
-        """, (platform, str(platform_uid)))
-        
-        result = self.cursor.fetchone()
-        today = datetime.now().date()
-        if result:
-            current_streak, longest_streak, last_login = result
-        else:
-            current_streak = 0
-            longest_streak = 0
-            last_login = None
-        
-        if last_login == today:
-            pass
-        elif last_login and (today - last_login).days == 1:
-            current_streak += 1
-            longest_streak = max(longest_streak, current_streak)
-        else:
-            current_streak = 1
-            longest_streak = max(longest_streak, current_streak)
-        
-        self.cursor.execute("""
-            INSERT INTO login_streak
-                (platform_uid, platform, logins, current_streak, longest_streak, last_login) 
-            VALUES (?, ?, 1, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                logins = logins + 1,
-                current_streak = VALUES(current_streak),
-                longest_streak = VALUES(longest_streak),
-                last_login = VALUES(last_login)
-        """, (str(platform_uid), platform, current_streak, longest_streak, today))
-        
-        self.conn.commit()
-
-    @ensure_connection
-    def reset_time(self, period: str):
-        """
-        Reset time counters for all users for the given period (daily, weekly, monthly)
-        and update the reset_log table.
-        """
-        now = datetime.now()
-        if period == 'daily':
-            self.cursor.execute("""
-                UPDATE time SET daily_time = 0
-            """)
-            self.cursor.execute("""
-                UPDATE reset_log SET last_daily_reset = ? WHERE id = 1
-            """, (now,))
-        elif period == 'weekly':
-            self.cursor.execute("""
-                UPDATE time SET weekly_time = 0
-            """)
-            self.cursor.execute("""
-                UPDATE reset_log SET last_weekly_reset = ? WHERE id = 1
-            """, (now,))
-        elif period == 'monthly':
-            self.cursor.execute("""
-                UPDATE time SET monthly_time = 0
-            """)
-            self.cursor.execute("""
-                UPDATE reset_log SET last_monthly_reset = ? WHERE id = 1
-            """, (now,))
-        self.conn.commit()
-
-    @ensure_connection
-    def get_last_resets(self):
-        self.cursor.execute("""
-            SELECT last_daily_reset, last_weekly_reset, last_monthly_reset, last_season_reset
-            FROM reset_log
-            WHERE id = 1
-        """)
-        return self.cursor.fetchone()
-
-    @ensure_connection
-    def close_season(self, closed_at: Optional[datetime] = None) -> dict:
-        """
-        Award end-of-season markers from the current division state, then reset
-        seasonal counters and divisions for the next season.
-        """
-        closed_at = closed_at or datetime.now()
-        season_number = get_season_number_for_end_year(closed_at.year)
-
-        try:
-            self.cursor.execute("""
-                SELECT
-                    u.id,
-                    u.discord_id,
-                    u.teamspeak_id,
-                    COALESCE(u.division, 1) AS division,
-                    COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) AS season_time
-                FROM user u
-                LEFT JOIN time d
-                    ON d.platform = 'discord'
-                    AND d.platform_uid = u.discord_id
-                LEFT JOIN time t
-                    ON t.platform = 'teamspeak'
-                    AND t.platform_uid = u.teamspeak_id
-                WHERE COALESCE(u.ranking_disabled, 0) = 0
-                    AND COALESCE(d.season_time, 0) + COALESCE(t.season_time, 0) > 0
-                ORDER BY season_time DESC, u.id ASC
-            """)
-            participants = self.cursor.fetchall()
-
-            achievement_rows = []
-            for index, (_, discord_id, teamspeak_id, division, _) in enumerate(participants):
-                achievement_types = get_season_division_achievement_types(division, season_number)
-                if index == 0:
-                    achievement_types.append(SEASON_APEX_ACHIEVEMENT)
-
-                platform_ids = []
-                if discord_id:
-                    platform_ids.append(('discord', str(discord_id)))
-                if teamspeak_id:
-                    platform_ids.append(('teamspeak', str(teamspeak_id)))
-
-                for platform, platform_id in platform_ids:
-                    for achievement_type in achievement_types:
-                        achievement_rows.append((platform, platform_id, achievement_type))
-
-            if achievement_rows:
-                self.cursor.executemany("""
-                    INSERT IGNORE INTO special_achievements
-                        (platform, platform_id, achievement_type)
-                    VALUES (?, ?, ?)
-                """, achievement_rows)
-
-            self.cursor.execute("UPDATE time SET season_time = 0")
-            self.cursor.execute("UPDATE user SET division = 1")
-            self.cursor.execute("""
-                UPDATE reset_log
-                SET last_season_reset = ?
-                WHERE id = 1
-            """, (closed_at,))
-            self.conn.commit()
-
-            return {
-                'participants': len(participants),
-                'achievement_rows': len(achievement_rows),
-            }
-        except mariadb.Error:
-            self.conn.rollback()
-            raise
 
     @ensure_connection
     def get_platform_ids(self, platform: str, platform_id: str) -> Tuple[Optional[str], Optional[str]]:
@@ -1180,7 +580,7 @@ class DatabaseManager:
         query = f"""
             SELECT discord_id, teamspeak_id
             FROM user
-            WHERE {id_column} = ?
+            WHERE {id_column} = %s
         """
         self.cursor.execute(query, (str(platform_id),))
         result = self.cursor.fetchone()
@@ -1188,30 +588,6 @@ class DatabaseManager:
             return result[0], result[1]
         else:
             return None, None
-
-    @ensure_connection
-    def has_time_entry(self, platform_uid: Union[int, str], platform: str) -> bool:
-        """
-        Check if a time entry exists for the given platform UID and platform.
-        
-        Args:
-            platform_uid: The platform user ID (Discord ID or TeamSpeak UID)
-            platform: The platform ('discord' or 'teamspeak')
-            
-        Returns:
-            bool: True if a time entry exists, False otherwise
-        """
-        if platform not in ('discord', 'teamspeak'):
-            raise ValueError("platform must be 'discord' or 'teamspeak'")
-            
-        query = """
-            SELECT 1 FROM time 
-            WHERE platform_uid = ? AND platform = ?
-            LIMIT 1
-        """
-        self.cursor.execute(query, (str(platform_uid), platform))
-        result = self.cursor.fetchone()
-        return result is not None
 
     @ensure_connection
     def get_ttt_player_stats(self, steam_id: Union[int, str]) -> dict:
@@ -1229,66 +605,9 @@ class DatabaseManager:
                 deaths,
                 last_played_at
             FROM ttt_player_stats
-            WHERE steam_id = ?
+            WHERE steam_id = %s
         """, (steam_id,))
         return ttt_stats_from_row(self.cursor.fetchone(), steam_id)
-
-    @ensure_connection
-    def ingest_ttt_achievement_event(self, payload: dict) -> dict:
-        event = normalize_ttt_achievement_payload(payload)
-        emitted_at = parse_ttt_emitted_at(event.get('emitted_at'))
-        innocent_wins, detective_wins, traitor_wins = _ttt_win_breakdown(event)
-
-        try:
-            self.cursor.execute("""
-                INSERT INTO ttt_player_stats (
-                    steam_id,
-                    last_ttt_name,
-                    rounds_played,
-                    rounds_won,
-                    innocent_wins,
-                    detective_wins,
-                    traitor_wins,
-                    kills,
-                    deaths,
-                    last_played_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                    last_ttt_name = CASE
-                        WHEN VALUES(last_ttt_name) IS NULL OR VALUES(last_ttt_name) = '' THEN last_ttt_name
-                        ELSE VALUES(last_ttt_name)
-                    END,
-                    rounds_played = rounds_played + VALUES(rounds_played),
-                    rounds_won = rounds_won + VALUES(rounds_won),
-                    innocent_wins = innocent_wins + VALUES(innocent_wins),
-                    detective_wins = detective_wins + VALUES(detective_wins),
-                    traitor_wins = traitor_wins + VALUES(traitor_wins),
-                    kills = kills + VALUES(kills),
-                    deaths = deaths + VALUES(deaths),
-                    last_played_at = CASE
-                        WHEN last_played_at IS NULL OR VALUES(last_played_at) > last_played_at
-                            THEN VALUES(last_played_at)
-                        ELSE last_played_at
-                    END,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (
-                event['steam_id64'],
-                event['name'],
-                event['rounds_played'],
-                event['rounds_won'],
-                innocent_wins,
-                detective_wins,
-                traitor_wins,
-                event['kills'],
-                event['deaths'],
-                emitted_at,
-            ))
-            self.conn.commit()
-            return {'ok': True, 'event_id': event['event_id']}
-        except mariadb.Error:
-            self.conn.rollback()
-            raise
 
     def close(self) -> None:
         """Close database connection"""
@@ -1297,5 +616,5 @@ class DatabaseManager:
                 self.cursor.close()
             if self.conn:
                 self.conn.close()
-        except mariadb.Error as e:
+        except pymysql.Error as e:
             logging.error(f"Error closing database connection: {e}")

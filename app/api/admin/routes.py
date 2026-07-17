@@ -38,7 +38,7 @@ def _fetch_user_for_update(db, user_id):
             id, steam_id, discord_id, teamspeak_id, name, level, division,
             COALESCE(ranking_disabled, 0)
         FROM user
-        WHERE id = ?
+        WHERE id = %s
         FOR UPDATE
     """, (user_id,))
     return db.cursor.fetchone()
@@ -112,7 +112,7 @@ def _write_audit(db, action, target_identifiers, summary, result_status):
     db.cursor.execute("""
         INSERT INTO admin_audit_log
             (admin_steam_id, action, target_identifiers, summary, result_status)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
     """, (
         _admin_steam_id(),
         action,
@@ -143,15 +143,15 @@ def _recalculate_user_rank(db, user_id):
         LEFT JOIN time t ON
             (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
             (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
-        WHERE u.id = ?
+        WHERE u.id = %s
     """, (user_id,))
     total_time, season_time = db.cursor.fetchone() or (0, 0)
     level = Config.get_level_for_minutes(total_time or 0)
     division = Config.get_division_for_minutes(season_time or 0)
     db.cursor.execute("""
         UPDATE user
-        SET level = ?, division = ?
-        WHERE id = ?
+        SET level = %s, division = %s
+        WHERE id = %s
     """, (level, division, user_id))
     return {"level": level, "division": division}
 
@@ -163,10 +163,10 @@ def _move_time(db, platform, source_uid, target_uid):
             monthly_time, season_time, last_update
         )
         SELECT
-            ?, platform, total_time, daily_time, weekly_time,
+            %s, platform, total_time, daily_time, weekly_time,
             monthly_time, season_time, last_update
         FROM time src
-        WHERE src.platform = ? AND src.platform_uid = ?
+        WHERE src.platform = %s AND src.platform_uid = %s
         ON DUPLICATE KEY UPDATE
             time.total_time = time.total_time + VALUES(total_time),
             time.daily_time = time.daily_time + VALUES(daily_time),
@@ -176,7 +176,7 @@ def _move_time(db, platform, source_uid, target_uid):
             time.last_update = GREATEST(time.last_update, VALUES(last_update))
     """, (target_uid, platform, source_uid))
     db.cursor.execute(
-        "DELETE FROM time WHERE platform = ? AND platform_uid = ?",
+        "DELETE FROM time WHERE platform = %s AND platform_uid = %s",
         (platform, source_uid),
     )
 
@@ -188,16 +188,16 @@ def _move_heatmap(db, platform, source_uid, target_uid):
             activity_minutes, last_update
         )
         SELECT
-            ?, platform, day_of_week, time_category,
+            %s, platform, day_of_week, time_category,
             activity_minutes, last_update
         FROM activity_heatmap src
-        WHERE src.platform = ? AND src.platform_uid = ?
+        WHERE src.platform = %s AND src.platform_uid = %s
         ON DUPLICATE KEY UPDATE
             activity_heatmap.activity_minutes = activity_heatmap.activity_minutes + VALUES(activity_minutes),
             activity_heatmap.last_update = GREATEST(activity_heatmap.last_update, VALUES(last_update))
     """, (target_uid, platform, source_uid))
     db.cursor.execute(
-        "DELETE FROM activity_heatmap WHERE platform = ? AND platform_uid = ?",
+        "DELETE FROM activity_heatmap WHERE platform = %s AND platform_uid = %s",
         (platform, source_uid),
     )
 
@@ -209,9 +209,9 @@ def _move_login_streak(db, platform, source_uid, target_uid):
             longest_streak, last_login
         )
         SELECT
-            ?, platform, logins, current_streak, longest_streak, last_login
+            %s, platform, logins, current_streak, longest_streak, last_login
         FROM login_streak src
-        WHERE src.platform = ? AND src.platform_uid = ?
+        WHERE src.platform = %s AND src.platform_uid = %s
         ON DUPLICATE KEY UPDATE
             login_streak.logins = login_streak.logins + VALUES(logins),
             login_streak.current_streak = GREATEST(login_streak.current_streak, VALUES(current_streak)),
@@ -219,7 +219,7 @@ def _move_login_streak(db, platform, source_uid, target_uid):
             login_streak.last_login = GREATEST(login_streak.last_login, VALUES(last_login))
     """, (target_uid, platform, source_uid))
     db.cursor.execute(
-        "DELETE FROM login_streak WHERE platform = ? AND platform_uid = ?",
+        "DELETE FROM login_streak WHERE platform = %s AND platform_uid = %s",
         (platform, source_uid),
     )
 
@@ -228,12 +228,12 @@ def _move_special_achievements(db, platform, source_uid, target_uid):
     db.cursor.execute("""
         INSERT IGNORE INTO special_achievements
             (platform, platform_id, achievement_type, awarded_at)
-        SELECT platform, ?, achievement_type, awarded_at
+        SELECT platform, %s, achievement_type, awarded_at
         FROM special_achievements
-        WHERE platform = ? AND platform_id = ?
+        WHERE platform = %s AND platform_id = %s
     """, (target_uid, platform, source_uid))
     db.cursor.execute(
-        "DELETE FROM special_achievements WHERE platform = ? AND platform_id = ?",
+        "DELETE FROM special_achievements WHERE platform = %s AND platform_id = %s",
         (platform, source_uid),
     )
 
@@ -261,12 +261,12 @@ def search_players():
             COALESCE(level, 1), COALESCE(division, 1),
             COALESCE(ranking_disabled, 0)
         FROM user
-        WHERE name LIKE ?
-           OR CAST(steam_id AS CHAR) LIKE ?
-           OR discord_id LIKE ?
-           OR teamspeak_id LIKE ?
+        WHERE name LIKE %s
+           OR CAST(steam_id AS CHAR) LIKE %s
+           OR discord_id LIKE %s
+           OR teamspeak_id LIKE %s
         ORDER BY
-            CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
+            CASE WHEN name LIKE %s THEN 0 ELSE 1 END,
             id DESC
         LIMIT 20
     """, (like, like, like, like, like))
@@ -320,7 +320,7 @@ def get_player_detail(user_id):
             created_at, COALESCE(ranking_disabled, 0),
             ranking_disabled_at, ranking_disabled_reason
         FROM user
-        WHERE id = ?
+        WHERE id = %s
     """, (user_id,))
     user = db.cursor.fetchone()
     if not user:
@@ -338,7 +338,7 @@ def get_player_detail(user_id):
         db.cursor.execute("""
             SELECT total_time, daily_time, weekly_time, monthly_time, season_time, last_update
             FROM time
-            WHERE platform = ? AND platform_uid = ?
+            WHERE platform = %s AND platform_uid = %s
         """, (platform, platform_uid))
         row = db.cursor.fetchone()
         platform_times[platform] = {
@@ -353,8 +353,8 @@ def get_player_detail(user_id):
     db.cursor.execute("""
         SELECT platform, COUNT(*), SUM(activity_minutes)
         FROM activity_heatmap
-        WHERE (platform = 'discord' AND platform_uid = ?)
-           OR (platform = 'teamspeak' AND platform_uid = ?)
+        WHERE (platform = 'discord' AND platform_uid = %s)
+           OR (platform = 'teamspeak' AND platform_uid = %s)
         GROUP BY platform
     """, (discord_id, teamspeak_id))
     heatmap = {
@@ -365,8 +365,8 @@ def get_player_detail(user_id):
     db.cursor.execute("""
         SELECT platform, logins, current_streak, longest_streak, last_login
         FROM login_streak
-        WHERE (platform = 'discord' AND platform_uid = ?)
-           OR (platform = 'teamspeak' AND platform_uid = ?)
+        WHERE (platform = 'discord' AND platform_uid = %s)
+           OR (platform = 'teamspeak' AND platform_uid = %s)
     """, (discord_id, teamspeak_id))
     streaks = {
         row[0]: {
@@ -383,10 +383,10 @@ def get_player_detail(user_id):
         db.cursor.execute(f"""
             SELECT platform, platform_id, achievement_type, awarded_at
             FROM special_achievements
-            WHERE achievement_type IN ({','.join(['?'] * len(SPECIAL_ACHIEVEMENTS))})
+            WHERE achievement_type IN ({','.join(['%s'] * len(SPECIAL_ACHIEVEMENTS))})
               AND (
-                (platform = 'discord' AND platform_id = ?)
-                OR (platform = 'teamspeak' AND platform_id = ?)
+                (platform = 'discord' AND platform_id = %s)
+                OR (platform = 'teamspeak' AND platform_id = %s)
               )
             ORDER BY achievement_type, platform
         """, (
@@ -470,7 +470,7 @@ def update_player_time(user_id):
                 COALESCE(monthly_time, 0),
                 COALESCE(season_time, 0)
             FROM time
-            WHERE platform = ? AND platform_uid = ?
+            WHERE platform = %s AND platform_uid = %s
             FOR UPDATE
         """, (platform, platform_uid))
         old_row = db.cursor.fetchone()
@@ -490,7 +490,7 @@ def update_player_time(user_id):
                 platform_uid, platform, total_time, daily_time, weekly_time,
                 monthly_time, season_time, last_update
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
                 total_time = VALUES(total_time),
                 daily_time = VALUES(daily_time),
@@ -553,12 +553,12 @@ def update_player_join_date(user_id):
         if error:
             return _admin_error(db, action, target_identifiers, {}, error, status)
 
-        db.cursor.execute("SELECT created_at FROM user WHERE id = ?", (user["id"],))
+        db.cursor.execute("SELECT created_at FROM user WHERE id = %s", (user["id"],))
         old_created_at = db.cursor.fetchone()
         db.cursor.execute("""
             UPDATE user
-            SET created_at = ?
-            WHERE id = ?
+            SET created_at = %s
+            WHERE id = %s
         """, (created_at, user["id"]))
         summary = {
             "old_created_at": old_created_at[0].isoformat() if old_created_at and old_created_at[0] else None,
@@ -608,7 +608,7 @@ def _special_achievement_request(action):
         db.cursor.execute("""
             SELECT id
             FROM special_achievements
-            WHERE platform = ? AND platform_id = ? AND achievement_type = ?
+            WHERE platform = %s AND platform_id = %s AND achievement_type = %s
             FOR UPDATE
         """, (platform, platform_uid, achievement_type))
         existing = db.cursor.fetchone()
@@ -617,7 +617,7 @@ def _special_achievement_request(action):
                 db.cursor.execute("""
                     INSERT INTO special_achievements
                         (platform, platform_id, achievement_type)
-                    VALUES (?, ?, ?)
+                    VALUES (%s, %s, %s)
                 """, (platform, platform_uid, achievement_type))
             changed_key = "created"
             changed = existing is None
@@ -625,7 +625,7 @@ def _special_achievement_request(action):
             if existing:
                 db.cursor.execute("""
                     DELETE FROM special_achievements
-                    WHERE platform = ? AND platform_id = ? AND achievement_type = ?
+                    WHERE platform = %s AND platform_id = %s AND achievement_type = %s
                 """, (platform, platform_uid, achievement_type))
             changed_key = "deleted"
             changed = existing is not None
@@ -719,8 +719,8 @@ def transfer_ranking():
             UPDATE user
             SET ranking_disabled = 1,
                 ranking_disabled_at = CURRENT_TIMESTAMP,
-                ranking_disabled_reason = ?
-            WHERE id = ?
+                ranking_disabled_reason = %s
+            WHERE id = %s
         """, (reason[:255], source["id"]))
 
         summary = {"moved": moved, "target_rank": target_rank, "reason": reason}
@@ -770,7 +770,7 @@ def unlink_steam_platform():
 
         id_column = PLATFORM_ID_COLUMNS[platform]
         db.cursor.execute(
-            f"SELECT id FROM user WHERE {id_column} = ? AND id <> ? FOR UPDATE",
+            f"SELECT id FROM user WHERE {id_column} = %s AND id <> %s FOR UPDATE",
             (platform_uid, user["id"]),
         )
         if db.cursor.fetchone():
@@ -779,7 +779,7 @@ def unlink_steam_platform():
         db.cursor.execute("""
             SELECT COALESCE(total_time, 0), COALESCE(season_time, 0)
             FROM time
-            WHERE platform = ? AND platform_uid = ?
+            WHERE platform = %s AND platform_uid = %s
         """, (platform, platform_uid))
         time_row = db.cursor.fetchone() or (0, 0)
         new_level = Config.get_level_for_minutes(time_row[0] or 0)
@@ -787,7 +787,7 @@ def unlink_steam_platform():
 
         db.cursor.execute(f"""
             INSERT INTO user ({id_column}, name, level, division, created_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         """, (platform_uid, user["name"], new_level, new_division))
         new_user_id = db.cursor.lastrowid
 
@@ -800,16 +800,16 @@ def unlink_steam_platform():
         db.cursor.execute(f"""
             UPDATE user
             SET {id_column} = NULL,
-                ranking_disabled = CASE WHEN ? = 1 THEN 1 ELSE ranking_disabled END,
+                ranking_disabled = CASE WHEN %s = 1 THEN 1 ELSE ranking_disabled END,
                 ranking_disabled_at = CASE
-                    WHEN ? = 1 THEN CURRENT_TIMESTAMP
+                    WHEN %s = 1 THEN CURRENT_TIMESTAMP
                     ELSE ranking_disabled_at
                 END,
                 ranking_disabled_reason = CASE
-                    WHEN ? = 1 THEN ?
+                    WHEN %s = 1 THEN %s
                     ELSE ranking_disabled_reason
                 END
-            WHERE id = ?
+            WHERE id = %s
         """, (
             int(original_user_disabled),
             int(original_user_disabled),
@@ -865,7 +865,7 @@ def assign_ignore_role():
         db.cursor.execute(f"""
             SELECT {id_column}
             FROM user
-            WHERE id = ?
+            WHERE id = %s
         """, (user_id,))
         row = db.cursor.fetchone()
         if not row:
@@ -899,8 +899,8 @@ def assign_ignore_role():
             UPDATE user
             SET ranking_disabled = 1,
                 ranking_disabled_at = CURRENT_TIMESTAMP,
-                ranking_disabled_reason = ?
-            WHERE id = ?
+                ranking_disabled_reason = %s
+            WHERE id = %s
         """, (reason[:255], user_id))
         summary["ranking_disabled"] = True
         _write_audit(db, action, target_identifiers, summary, result_status)
@@ -982,7 +982,7 @@ def audit_log():
             summary, result_status, created_at
         FROM admin_audit_log
         ORDER BY created_at DESC, id DESC
-        LIMIT ?
+        LIMIT %s
     """, (limit + 1,))
     rows = db.cursor.fetchall()
     db.close()

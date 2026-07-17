@@ -348,7 +348,7 @@ class AdminSeasonSkinGrantTests(unittest.TestCase):
             time_insert[1],
             ("teamspeak-user", "teamspeak", 100, 100, 80, 100, 40),
         )
-        self.assertTrue(any("UPDATE user" in query and "SET level = ?" in query for query, _ in queries))
+        self.assertTrue(any("UPDATE user" in query and "SET level = %s" in query for query, _ in queries))
 
     def test_time_update_rejects_disabled_or_stale_targets(self):
         FakeDatabase.fetchone_results = [

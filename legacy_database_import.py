@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
-import mariadb
+import asyncio
+import pymysql
 from app.config import Config
 from app.utils.logger import RankingLogger
-from app.utils.database import DatabaseManager
+from app.utils.async_database import AsyncDatabaseManager
 import datetime
 
 logging = RankingLogger(__name__).get_logger()
 
 def import_bak_user_data():
     try:
-        conn = mariadb.connect(
+        conn = pymysql.connect(
             host=Config.DB_HOST,
             port=int(Config.DB_PORT),
             user=Config.DB_USER,
@@ -40,7 +41,7 @@ def import_bak_user_data():
             # Create user entry
             cursor.execute("""
                 INSERT INTO user (teamspeak_id, name, created_at)
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
                 ON DUPLICATE KEY UPDATE name = VALUES(name)
             """, (uuid, name, first_login))
 
@@ -48,7 +49,7 @@ def import_bak_user_data():
             total_time = (count + 59) // 60  # Round up count / 60
             cursor.execute("""
                 INSERT INTO time (platform_uid, platform, total_time, last_update)
-                VALUES (?, 'teamspeak', ?, ?)
+                VALUES (%s, 'teamspeak', %s, %s)
                 ON DUPLICATE KEY UPDATE total_time = VALUES(total_time)
             """, (uuid, total_time, last_login))
 
@@ -60,12 +61,12 @@ def import_bak_user_data():
             # Create stats entry
             cursor.execute("""
                 INSERT INTO login_streak (platform_uid, platform, logins, current_streak, longest_streak, last_login)
-                VALUES (?, 'teamspeak', ?, 1, 1, CURRENT_TIMESTAMP)
+                VALUES (%s, 'teamspeak', %s, 1, 1, CURRENT_TIMESTAMP)
                 ON DUPLICATE KEY UPDATE logins = VALUES(logins)
             """, (uuid, total_connections))
 
         conn.commit()
-    except mariadb.Error as e:
+    except pymysql.Error as e:
         logging.error(f"Error importing bak_user data: {e}")
         conn.rollback()
     finally:
@@ -76,7 +77,7 @@ def import_bak_user_data():
 
 def recalculate_ranks():
     try:
-        conn = mariadb.connect(
+        conn = pymysql.connect(
             host=Config.DB_HOST,
             port=int(Config.DB_PORT),
             user=Config.DB_USER,
@@ -84,16 +85,15 @@ def recalculate_ranks():
             database=Config.DB_NAME,
         )
         cursor = conn.cursor()
-        db = DatabaseManager()
         for platform in ['discord', 'teamspeak']:
             cursor.execute(f"SELECT platform_uid FROM time WHERE platform = '{platform}'")
             users = cursor.fetchall()
-            for user_id in users:
-                db.update_ranks([user_id[0]], platform)
-                db.update_seasonal_ranks([user_id[0]], platform)
+            # rank updates live on the async manager now (one-off script: just
+            # drive the loop here)
+            asyncio.run(_recalculate_platform_ranks([u[0] for u in users], platform))
 
         conn.commit()
-    except mariadb.Error as e:
+    except pymysql.Error as e:
         logging.error(f"Error recalculating ranks: {e}")
         conn.rollback()
     finally:
@@ -101,6 +101,16 @@ def recalculate_ranks():
             cursor.close()
         if conn:
             conn.close()
+
+
+async def _recalculate_platform_ranks(user_ids, platform):
+    db = AsyncDatabaseManager()
+    try:
+        for user_id in user_ids:
+            await db.update_ranks([user_id], platform)
+            await db.update_seasonal_ranks([user_id], platform)
+    finally:
+        await db.close()
 
 if __name__ == '__main__':
     import_bak_user_data()

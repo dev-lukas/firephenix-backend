@@ -82,7 +82,7 @@ def set_skin():
     try:
         query = """SELECT teamspeak_id, discord_id
         FROM user
-        WHERE steam_id = ? AND steam_id IS NOT NULL
+        WHERE steam_id = %s AND steam_id IS NOT NULL
         """
 
         db.cursor.execute(query, (steam_id,))
@@ -98,8 +98,8 @@ def set_skin():
         special_achievements_query = """
             SELECT achievement_type
             FROM special_achievements
-            WHERE (platform = 'discord' AND platform_id = ?)
-               OR (platform = 'teamspeak' AND platform_id = ?)
+            WHERE (platform = 'discord' AND platform_id = %s)
+               OR (platform = 'teamspeak' AND platform_id = %s)
             """
 
         special_achievements_params = []
@@ -130,9 +130,9 @@ def set_skin():
         unlock_query = """
             SELECT unlocked_at
             FROM unlockables
-            WHERE steam_id = ?
+            WHERE steam_id = %s
             AND platform = 'gameserver'
-            AND unlockable_type = ?
+            AND unlockable_type = %s
         """
 
         unlockable_type = get_ttt_season_skin_unlockable_type(season_number, tier)
@@ -155,7 +155,7 @@ def set_skin():
 
         db.execute_query("""
             INSERT INTO unlockables (steam_id, platform, unlockable_type)
-            VALUES (?, 'gameserver', ?)
+            VALUES (%s, 'gameserver', %s)
         """, (steam_id, unlockable_type))
     finally:
         db.close()

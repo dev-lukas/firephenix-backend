@@ -27,7 +27,7 @@ def set_move_shield():
 
     query = f"""SELECT {platform}_id, {platform}_moveable, level
     FROM user
-    WHERE steam_id = ? AND steam_id IS NOT NULL
+    WHERE steam_id = %s AND steam_id IS NOT NULL
     """
 
     db.cursor.execute(query, (steam_id,))
@@ -54,7 +54,7 @@ def set_move_shield():
         db.execute_query(f"""
             UPDATE user
                 SET {platform}_moveable = 0
-                WHERE steam_id = ?
+                WHERE steam_id = %s
         """, (steam_id,))
     else:
         return jsonify({'error': 'Error creating channel'}), 500
@@ -82,7 +82,7 @@ def remove_move_shield():
 
     query = f"""SELECT {platform}_id, {platform}_moveable, level
     FROM user
-    WHERE steam_id = ? AND steam_id IS NOT NULL
+    WHERE steam_id = %s AND steam_id IS NOT NULL
     """
 
     db.cursor.execute(query, (steam_id,))
@@ -109,7 +109,7 @@ def remove_move_shield():
         db.execute_query(f"""
             UPDATE user
                 SET {platform}_moveable = 1
-                WHERE steam_id = ?
+                WHERE steam_id = %s
         """, (steam_id,))
     else:
         return jsonify({'error': 'Error creating channel'}), 500

@@ -41,7 +41,7 @@ def initiate_verification():
     
     db = DatabaseManager()
     existing = db.execute_query(
-        f"SELECT steam_id FROM user WHERE {platform}_id = ? AND steam_id IS NOT NULL",
+        f"SELECT steam_id FROM user WHERE {platform}_id = %s AND steam_id IS NOT NULL",
         (platform_id,)
     )
 
@@ -54,13 +54,13 @@ def initiate_verification():
 
     db.execute_query("""
         DELETE FROM verification
-        WHERE steam_id = ? OR expires_at < NOW()
+        WHERE steam_id = %s OR expires_at < NOW()
     """, (steam_id,))
     
     db.execute_query("""
         INSERT INTO verification 
         (steam_id, platform_id, platform, verification_code, expires_at)
-        VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
+        VALUES (%s, %s, %s, %s, DATE_ADD(NOW(), INTERVAL 10 MINUTE))
     """, (steam_id, platform_id, platform, verification_code))
     
     db.close()
@@ -89,7 +89,7 @@ def verify_code():
     db = DatabaseManager()
     result = db.execute_query("""
         SELECT id, platform_id, verification_code, attempts FROM verification
-        WHERE steam_id = ? AND platform = ?
+        WHERE steam_id = %s AND platform = %s
         AND expires_at > NOW()
         LIMIT 1
     """, (steam_id, platform))
@@ -101,7 +101,7 @@ def verify_code():
 
     # Already exhausted: invalidate and force a fresh code to be requested.
     if attempts >= MAX_VERIFICATION_ATTEMPTS:
-        db.execute_query("DELETE FROM verification WHERE id = ?", (verification_id,))
+        db.execute_query("DELETE FROM verification WHERE id = %s", (verification_id,))
         db.close()
         return jsonify({'error': 'Too many invalid attempts. Please request a new code.'}), 429
 
@@ -109,10 +109,10 @@ def verify_code():
     if not secrets.compare_digest(str(expected_code), str(code)):
         attempts += 1
         if attempts >= MAX_VERIFICATION_ATTEMPTS:
-            db.execute_query("DELETE FROM verification WHERE id = ?", (verification_id,))
+            db.execute_query("DELETE FROM verification WHERE id = %s", (verification_id,))
         else:
             db.execute_query(
-                "UPDATE verification SET attempts = ? WHERE id = ?",
+                "UPDATE verification SET attempts = %s WHERE id = %s",
                 (attempts, verification_id),
             )
         db.close()
@@ -122,7 +122,7 @@ def verify_code():
         db.cursor.execute("START TRANSACTION")
         db.cursor.execute("""
             DELETE FROM verification
-            WHERE steam_id = ?
+            WHERE steam_id = %s
         """, (steam_id,))
         
         db.cursor.execute("""
@@ -130,15 +130,15 @@ def verify_code():
                    discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable,
                    COALESCE(ranking_disabled, 0), ranking_disabled_at, ranking_disabled_reason
             FROM user
-            WHERE steam_id = ?
+            WHERE steam_id = %s
         """, (steam_id,))
         existing_users = db.cursor.fetchall()
         
         if not existing_users:
             db.cursor.execute(f"""
                 UPDATE user 
-                SET steam_id = ?
-                WHERE {platform}_id = ?
+                SET steam_id = %s
+                WHERE {platform}_id = %s
             """, (steam_id, platform_id))
         
         else:        
@@ -149,7 +149,7 @@ def verify_code():
                 SELECT level, division, discord_channel, teamspeak_channel, discord_moveable, teamspeak_moveable,
                        COALESCE(ranking_disabled, 0), ranking_disabled_at, ranking_disabled_reason
                 FROM user
-                WHERE {platform}_id = ?
+                WHERE {platform}_id = %s
             """, (platform_id,))
             user_to_merge = db.cursor.fetchall()
             primary_ranking_disabled = bool(primary_user[11])
@@ -202,26 +202,26 @@ def verify_code():
             
             db.cursor.execute(f"""
                 DELETE FROM user
-                WHERE id != ? AND {platform}_id = ?
+                WHERE id != %s AND {platform}_id = %s
             """, (primary_id, platform_id))
             
             db.cursor.execute(f"""
                 UPDATE user
-                SET steam_id = ?,
-                    {platform}_id = ?,
-                    level = ?,
-                    division = ?,
-                    discord_channel = ?,
-                    teamspeak_channel = ?,
-                    discord_moveable = ?,
-                    teamspeak_moveable = ?,
-                    ranking_disabled = ?,
+                SET steam_id = %s,
+                    {platform}_id = %s,
+                    level = %s,
+                    division = %s,
+                    discord_channel = %s,
+                    teamspeak_channel = %s,
+                    discord_moveable = %s,
+                    teamspeak_moveable = %s,
+                    ranking_disabled = %s,
                     ranking_disabled_at = CASE
-                        WHEN ? = 1 THEN COALESCE(?, ranking_disabled_at, CURRENT_TIMESTAMP)
+                        WHEN %s = 1 THEN COALESCE(%s, ranking_disabled_at, CURRENT_TIMESTAMP)
                         ELSE NULL
                     END,
-                    ranking_disabled_reason = ?
-                WHERE id = ?
+                    ranking_disabled_reason = %s
+                WHERE id = %s
             """, (steam_id, platform_id, max_level, max_division, 
                   final_discord_channel, final_teamspeak_channel, 
                   final_discord_moveable, final_teamspeak_moveable,

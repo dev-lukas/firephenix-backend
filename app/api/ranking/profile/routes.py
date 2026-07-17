@@ -60,7 +60,7 @@ def get_ranking():
         (SELECT mean_time FROM user_stats) as mean_time,
         (SELECT best_time FROM user_stats) as best_time
     FROM ranked_users r
-    WHERE r.id = ?
+    WHERE r.id = %s
     """
 
     streak_query = """
@@ -69,8 +69,8 @@ def get_ranking():
         current_streak,
         longest_streak
     FROM login_streak
-    WHERE (platform = 'discord' AND platform_uid = ?)
-        OR (platform = 'teamspeak' AND platform_uid = ?)
+    WHERE (platform = 'discord' AND platform_uid = %s)
+        OR (platform = 'teamspeak' AND platform_uid = %s)
     """
 
     db.cursor.execute(query, (user_id,))
@@ -115,7 +115,7 @@ def get_ranking():
         WHERE platform IN ('discord', 'teamspeak')
     ) h ON (h.platform = 'discord' AND h.platform_uid = u.discord_id)
             OR (h.platform = 'teamspeak' AND h.platform_uid = u.teamspeak_id)
-    WHERE u.id = ?
+    WHERE u.id = %s
         AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
         AND COALESCE(u.ranking_disabled, 0) = 0
     GROUP BY h.day_of_week, h.time_category
@@ -177,8 +177,8 @@ def get_ranking():
     special_achievements_query = """
         SELECT achievement_type
         FROM special_achievements
-        WHERE (platform = 'discord' AND platform_id = ?)
-           OR (platform = 'teamspeak' AND platform_id = ?)
+        WHERE (platform = 'discord' AND platform_id = %s)
+           OR (platform = 'teamspeak' AND platform_id = %s)
     """
     
     special_achievements_params = []

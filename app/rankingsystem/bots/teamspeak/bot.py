@@ -1,7 +1,7 @@
 import asyncio
 import time
 import atsq
-from app.utils.database import DatabaseManager
+from app.utils.async_database import get_async_db
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.rankingsystem.bots.teamspeak.client_manager import ClientManager
@@ -15,10 +15,8 @@ class TeamspeakBot:
     A TeamSpeak bot implementation using the Singleton pattern for managing
     user connections, ranks, and time tracking.
 
-    Runs an asyncio event loop in its own thread (like the Discord bot); all
-    query traffic shares one atsq client with automatic keepalive/reconnect.
-    Other threads call the async methods via asyncio.run_coroutine_threadsafe
-    against `self.loop`.
+    Runs as a task on the shared event loop; all query traffic shares one
+    atsq client with automatic keepalive/reconnect.
     """
     _instance = None
     VALIDATION_INTERVAL = 300  # Validate every 5 minutes
@@ -35,10 +33,7 @@ class TeamspeakBot:
         self.initialized = True
         self.running = False
         self.last_validation = 0
-        self.database = DatabaseManager()
-        # Created here (not in run()) so run_coroutine_threadsafe never races
-        # against bot-thread startup; the loop starts running in run().
-        self.loop = asyncio.new_event_loop()
+        self.database = get_async_db()
         self.client = atsq.Client(
             Config.TS3_HOST,
             int(Config.TS3_PORT),
@@ -68,21 +63,20 @@ class TeamspeakBot:
             if uid:
                 logging.debug(f"User disconnected with reason {event.get('reasonid')}: {uid}")
 
-    def run(self):
-        """Thread entrypoint: owns the event loop; atsq handles reconnection"""
+    async def run_async(self):
+        """Own the TeamSpeak session on the shared loop; atsq handles reconnection"""
         self.running = True
-        asyncio.set_event_loop(self.loop)
         try:
-            self.loop.run_until_complete(self.client.run_forever(on_ready=self._on_ready))
+            await self.client.run_forever(on_ready=self._on_ready)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logging.error(f"TeamSpeak bot loop terminated unexpectedly: {e}")
         finally:
             if self._validation_task is not None:
                 self._validation_task.cancel()
-                self.loop.run_until_complete(
-                    asyncio.gather(self._validation_task, return_exceptions=True)
-                )
-            self.loop.close()
+                await asyncio.gather(self._validation_task, return_exceptions=True)
+                self._validation_task = None
 
     async def _on_ready(self, client):
         """Runs after every (re)connect: rescan clients and sync their roles"""
@@ -155,8 +149,7 @@ class TeamspeakBot:
             logging.error(f"Error during forced validation: {e}")
             return False
 
-    def stop(self):
-        """Gracefully stop the bot (callable from any thread)"""
+    async def stop(self):
+        """Gracefully stop the bot"""
         self.running = False
-        if not self.loop.is_closed():
-            asyncio.run_coroutine_threadsafe(self.client.close(), self.loop)
+        await self.client.close()

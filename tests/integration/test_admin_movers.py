@@ -32,7 +32,7 @@ class AdminMoverTests(unittest.TestCase):
 
     def _time(self, uid):
         self.db.cursor.execute(
-            "SELECT total_time, season_time FROM time WHERE platform='teamspeak' AND platform_uid = ?",
+            "SELECT total_time, season_time FROM time WHERE platform='teamspeak' AND platform_uid = %s",
             (uid,))
         return self.db.cursor.fetchone()
 

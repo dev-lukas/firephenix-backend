@@ -94,7 +94,7 @@ class AdminTimeUpdateTests(IntegrationTestCase):
         self.assertEqual(response.status_code, 200)
 
         # 700 minutes -> level 3 (600 <= 700 < 1200) per Config.LEVEL_REQUIREMENTS.
-        rows = self.fetch_all("SELECT level FROM user WHERE id = ?", (user_id,))
+        rows = self.fetch_all("SELECT level FROM user WHERE id = %s", (user_id,))
         self.assertEqual(rows[0][0], 3)
 
     def test_time_update_rejects_season_time_above_total_and_audits_failure(self):

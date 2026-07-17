@@ -68,14 +68,14 @@ def get_ranking():
     
     params = []
     if search:
-        count_query += " AND name LIKE ?"
-        query += " AND name LIKE ?"
+        count_query += " AND name LIKE %s"
+        query += " AND name LIKE %s"
         params.append(f"%{search}%")
     total_count = db.execute_query(count_query, tuple(params) if search else None)[0][0]
     page = clamp_page_to_total(page, total_count, limit)
     offset = (page - 1) * limit
 
-    query += " ORDER BY minutes DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY minutes DESC LIMIT %s OFFSET %s"
     params.extend([limit, offset])
     result = db.execute_query(query, params)
     current_time = datetime.now()

@@ -3,14 +3,15 @@ name = "firephenix-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "asyncmy>=0.2.10",
     "atsq>=1.0.0a4",
     "discord.py",
     "flask",
     "flask-cors",
     "flask-limiter[valkey]",
     "gunicorn",
-    "mariadb",
     "psutil",
+    "pymysql",
     "python-dotenv",
     "requests>=2.28.0",
     "valkey[libvalkey]",

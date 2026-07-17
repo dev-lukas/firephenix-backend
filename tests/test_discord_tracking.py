@@ -30,11 +30,26 @@ class StopRun(BaseException):
     pass
 
 
-class FakeRunDiscordClient(FakeDiscordClient):
-    def run(self, token, **kwargs):
-        self.run_token = token
-        self.run_kwargs = kwargs
+class FakeStartDiscordClient(FakeDiscordClient):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.closed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.close()
+
+    async def start(self, token):
+        self.start_token = token
         raise StopRun()
+
+    async def close(self):
+        self.closed = True
+
+    def is_closed(self):
+        return self.closed
 
 
 class DiscordVoiceScanTests(unittest.TestCase):
@@ -90,19 +105,22 @@ class DiscordVoiceScanTests(unittest.TestCase):
         self.assertIn("on_ready", first.events)
         self.assertIn("on_ready", second.events)
 
-    def test_discord_bot_disables_library_log_handler_on_run(self):
+    def test_discord_bot_run_async_starts_and_closes_session(self):
         original_bot = discord_bot_module.commands.Bot
-        FakeRunDiscordClient.instances = []
-        discord_bot_module.commands.Bot = FakeRunDiscordClient
+        FakeStartDiscordClient.instances = []
+        discord_bot_module.commands.Bot = FakeStartDiscordClient
         try:
             bot = DiscordBot()
             with self.assertRaises(StopRun):
-                bot.run()
+                asyncio.run(bot.run_async())
         finally:
             discord_bot_module.commands.Bot = original_bot
 
-        self.assertEqual(len(FakeRunDiscordClient.instances), 1)
-        self.assertIsNone(FakeRunDiscordClient.instances[0].run_kwargs.get("log_handler"))
+        self.assertEqual(len(FakeStartDiscordClient.instances), 1)
+        session = FakeStartDiscordClient.instances[0]
+        self.assertEqual(session.start_token, bot.token)
+        self.assertTrue(session.closed)
+        self.assertIsNone(bot.bot)
 
     def test_discord_library_logger_is_configured_once(self):
         discord_logger = python_logging.getLogger("discord")

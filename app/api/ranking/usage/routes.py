@@ -17,7 +17,7 @@ def get_usage():
         timestamp,
         SUM(user_count) as total_users
     FROM usage_stats 
-    WHERE timestamp >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+    WHERE timestamp >= DATE_SUB(NOW(), INTERVAL %s HOUR)
     GROUP BY timestamp
     ORDER BY timestamp ASC
     """

@@ -26,7 +26,7 @@ def create_channel():
     db = DatabaseManager()
     query = f"""SELECT level, discord_id, teamspeak_id, {platform}_channel
     FROM user
-    WHERE steam_id = ? AND steam_id IS NOT NULL
+    WHERE steam_id = %s AND steam_id IS NOT NULL
     """
 
     db.cursor.execute(query, (steam_id,))
@@ -48,8 +48,8 @@ def create_channel():
     special_achievements_query = """
         SELECT achievement_type
         FROM special_achievements
-        WHERE (platform = 'discord' AND platform_id = ?)
-           OR (platform = 'teamspeak' AND platform_id = ?)
+        WHERE (platform = 'discord' AND platform_id = %s)
+           OR (platform = 'teamspeak' AND platform_id = %s)
     """
     
     special_achievements_params = []
@@ -78,7 +78,7 @@ def create_channel():
     
     query = """SELECT unlocked_at
     FROM unlockables
-    WHERE platform = ? AND steam_id = ? AND unlockable_type = 1
+    WHERE platform = %s AND steam_id = %s AND unlockable_type = 1
     """
 
     db.cursor.execute(query, (platform, steam_id))
@@ -92,7 +92,7 @@ def create_channel():
 
     db.execute_query("""
         INSERT INTO unlockables (steam_id, platform, unlockable_type)
-        VALUES (?, ?, 1)
+        VALUES (%s, %s, 1)
     """, (steam_id, platform))
 
     db.close()

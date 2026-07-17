@@ -152,7 +152,7 @@ class DiscordProfileService:
             )
             SELECT *
             FROM ranked_users
-            WHERE discord_id = ?
+            WHERE discord_id = %s
             """
             rows = db.execute_query(query, (str(discord_id),)) or []
             if not rows:
@@ -160,7 +160,7 @@ class DiscordProfileService:
                     """
                     SELECT id
                     FROM user
-                    WHERE discord_id = ?
+                    WHERE discord_id = %s
                         AND COALESCE(ranking_disabled, 0) = 1
                     """,
                     (str(discord_id),),
@@ -238,8 +238,8 @@ class DiscordProfileService:
             """
             SELECT achievement_type
             FROM special_achievements
-            WHERE (platform = 'discord' AND platform_id = ?)
-               OR (platform = 'teamspeak' AND platform_id = ?)
+            WHERE (platform = 'discord' AND platform_id = %s)
+               OR (platform = 'teamspeak' AND platform_id = %s)
             """,
             (profile["discord_id"], profile["teamspeak_id"]),
         ) or []
@@ -252,8 +252,8 @@ class DiscordProfileService:
                 SUM(logins) AS total_logins,
                 MAX(longest_streak) AS longest_streak
             FROM login_streak
-            WHERE (platform = 'discord' AND platform_uid = ?)
-               OR (platform = 'teamspeak' AND platform_uid = ?)
+            WHERE (platform = 'discord' AND platform_uid = %s)
+               OR (platform = 'teamspeak' AND platform_uid = %s)
             """,
             (profile["discord_id"], profile["teamspeak_id"]),
         ) or [(0, 0)]
@@ -269,8 +269,8 @@ class DiscordProfileService:
             FROM activity_heatmap
             WHERE activity_minutes > 0
                 AND (
-                    (platform = 'discord' AND platform_uid = ?)
-                    OR (platform = 'teamspeak' AND platform_uid = ?)
+                    (platform = 'discord' AND platform_uid = %s)
+                    OR (platform = 'teamspeak' AND platform_uid = %s)
                 )
             """,
             (profile["discord_id"], profile["teamspeak_id"]),

@@ -35,7 +35,7 @@ def get_achievements():
         LEFT JOIN time t ON 
             (t.platform = 'discord' AND t.platform_uid = u.discord_id) OR
             (t.platform = 'teamspeak' AND t.platform_uid = u.teamspeak_id)
-        WHERE u.id = ?
+        WHERE u.id = %s
             AND COALESCE(u.ranking_disabled, 0) = 0
         GROUP BY u.steam_id, u.discord_id, u.teamspeak_id
     """
@@ -57,8 +57,8 @@ def get_achievements():
         SUM(logins) as total_logins,
         MAX(longest_streak) as max_longest_streak
     FROM login_streak
-    WHERE (platform = 'discord' AND platform_uid = ?)
-        OR (platform = 'teamspeak' AND platform_uid = ?)
+    WHERE (platform = 'discord' AND platform_uid = %s)
+        OR (platform = 'teamspeak' AND platform_uid = %s)
     """
     
     streak_data = db.execute_query(streak_query, (discord_id, teamspeak_id))
@@ -87,7 +87,7 @@ def get_achievements():
             WHERE platform IN ('discord', 'teamspeak')
         ) h ON (h.platform = 'discord' AND h.platform_uid = u.discord_id)
                 OR (h.platform = 'teamspeak' AND h.platform_uid = u.teamspeak_id)
-        WHERE u.id = ?
+        WHERE u.id = %s
             AND (u.discord_id IS NOT NULL OR u.teamspeak_id IS NOT NULL)
             AND COALESCE(u.ranking_disabled, 0) = 0
         GROUP BY h.day_of_week, h.time_category
@@ -105,8 +105,8 @@ def get_achievements():
     special_achievements_query = """
         SELECT achievement_type
         FROM special_achievements
-        WHERE (platform = 'discord' AND platform_id = ?)
-           OR (platform = 'teamspeak' AND platform_id = ?)
+        WHERE (platform = 'discord' AND platform_id = %s)
+           OR (platform = 'teamspeak' AND platform_id = %s)
     """
     
     special_achievements_params = []

@@ -17,7 +17,7 @@ def get_connected_users():
     
     online_users = valkey_manager.get_online_users(platform)
     id_column = 'discord_id' if platform == 'discord' else 'teamspeak_id'
-    placeholders = ','.join(['?'] * len(online_users))
+    placeholders = ','.join(['%s'] * len(online_users))
     
     if not online_users:
         return jsonify({'users': []})
