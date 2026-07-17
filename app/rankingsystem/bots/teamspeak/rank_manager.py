@@ -1,4 +1,4 @@
-import ts3
+import atsq
 from app.utils.database import DatabaseConnectionError
 from app.utils.logger import RankingLogger
 
@@ -6,25 +6,24 @@ logging = RankingLogger(__name__).get_logger()
 
 class RankManager:
     """Manages TeamSpeak user ranks and server groups"""
-    
-    def __init__(self, config, db_manager, connection_manager):
+
+    def __init__(self, config, db_manager, client: atsq.Client):
         self.config = config
         self.db = db_manager
-        self.connection_manager = connection_manager
-    
-    def check_user_roles(self, uid, ts3conn):
+        self.client = client
+
+    async def check_user_roles(self, uid):
         """Check if user rank needs to be updated"""
         try:
             logging.debug(f"Checking rank for user: {uid}")
-            db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=uid)[0]
-            cldbid = db_info.get("cldbid")
-            
+            cldbid = await self.client.client_dbid_from_uid(uid)
+
             try:
                 rank, division = self.db.get_user_roles(uid, "teamspeak")
             except DatabaseConnectionError:
                 logging.error("Database connection error in check_user_roles. Skipping.")
                 return
-            
+
             if rank is None or division is None:
                 if self.db.has_time_entry(uid, "teamspeak"):
                     logging.warning(f"User {uid} has no rank or division set in the database, but has time entries. Seems like the database failed to fetch. Skipping.")
@@ -34,9 +33,9 @@ class RankManager:
                     rank = 1
                     division = 1
 
-            groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
+            groups_info = await self.client.server_groups_by_client(cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
-            
+
             logging.debug(f"User {uid} database rank and division: {rank} and {division}")
             logging.debug(f"User {uid} should have group {self.config.TEAMSPEAK_LEVEL_MAP.get(rank)} and {self.config.TEAMSPEAK_DIVISION_MAP.get(division)}")
             logging.debug(f"User {uid} has groups: {group_ids}")
@@ -58,119 +57,112 @@ class RankManager:
 
             if not correct_rank or rank_roles_count > 1:
                 logging.debug(f"Setting rank for user {uid} to {rank} (had {rank_roles_count} rank roles)")
-                self.set_ranks(uid, level=rank)
+                await self.set_ranks(uid, level=rank)
 
             if not correct_division or division_roles_count > 1:
                 logging.debug(f"Setting division for user {uid} to {division} (had {division_roles_count} division roles)")
-                self.set_ranks(uid, division=division)
+                await self.set_ranks(uid, division=division)
 
-        except ts3.query.TS3QueryError as e:
+        except atsq.QueryError as e:
             logging.error(f"Error checking user roles: {e}")
         except Exception as e:
             logging.error(f"Error getting server groups for client {uid}: {e}")
-    
-    def set_ranks(self, client_id, level=None, division=None):
+
+    async def set_ranks(self, client_id, level=None, division=None):
         """Update user ranks in the TeamSpeak server"""
         if level is None and division is None:
             logging.warning(f"No rank type specified for user {client_id}")
             return None
-            
-        try:
-            with self.connection_manager.connect() as ts3conn:
-                db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
-                cldbid = db_info.get("cldbid")
 
-                if level is not None:
-                    self._update_server_group(
-                        ts3conn, 
-                        cldbid, 
-                        self.config.TEAMSPEAK_LEVEL_MAP, 
-                        level, 
-                        "level",
-                        client_id
-                    )
-                    
-                if division is not None:
-                    self._update_server_group(
-                        ts3conn, 
-                        cldbid, 
-                        self.config.TEAMSPEAK_DIVISION_MAP, 
-                        division,
-                        "division",
-                        client_id
-                    )
-                    
-                return True
-                    
+        try:
+            cldbid = await self.client.client_dbid_from_uid(client_id)
+
+            if level is not None:
+                await self._update_server_group(
+                    cldbid,
+                    self.config.TEAMSPEAK_LEVEL_MAP,
+                    level,
+                    "level",
+                    client_id
+                )
+
+            if division is not None:
+                await self._update_server_group(
+                    cldbid,
+                    self.config.TEAMSPEAK_DIVISION_MAP,
+                    division,
+                    "division",
+                    client_id
+                )
+
+            return True
+
         except Exception as e:
             logging.error(f"Rank update failed for user {client_id}: {e}")
             return None
-    
-    def set_server_group(self, client_id, group_id):
+
+    async def set_server_group(self, client_id, group_id):
         """Set a specific server group for a user and return command details."""
         cldbid = None
-        step = "connect"
+        step = "client_lookup"
         try:
-            with self.connection_manager.connect() as ts3conn:
-                step = "client_lookup"
-                db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
-                cldbid = db_info.get("cldbid")
-                if not cldbid:
-                    return {"ok": False, "error": "client_dbid_missing", "details": str(db_info)}
+            cldbid = await self.client.client_dbid_from_uid(client_id)
+            if not cldbid:
+                return {"ok": False, "error": "client_dbid_missing"}
 
-                step = "servergroup_lookup"
-                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
-                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+            step = "servergroup_lookup"
+            groups_info = await self.client.server_groups_by_client(cldbid)
+            group_ids = [int(group.get("sgid", 0)) for group in groups_info]
 
-                if group_id in group_ids:
-                    return {
-                        "ok": True,
-                        "already_present": True,
-                        "cldbid": cldbid,
-                        "group_id": group_id,
-                    }
-
-                step = "servergroup_add"
-                try:
-                    ts3conn.exec_("servergroupaddclient", sgid=group_id, cldbid=cldbid)
-                except Exception as e:
-                    try:
-                        step = "servergroup_recheck"
-                        refreshed_groups = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
-                        refreshed_group_ids = [int(group.get("sgid", 0)) for group in refreshed_groups]
-                        if group_id in refreshed_group_ids:
-                            logging.info(
-                                f"TeamSpeak group {group_id} for {client_id} is present after add error; treating as success."
-                            )
-                            return {
-                                "ok": True,
-                                "already_present": True,
-                                "recovered_after_add_error": True,
-                                "cldbid": cldbid,
-                                "group_id": group_id,
-                                "details": str(e),
-                            }
-                    except Exception as refresh_error:
-                        logging.error(
-                            f"Failed to re-check TeamSpeak groups after add error for {client_id} ({cldbid}): {refresh_error}"
-                        )
-                    logging.error(f"Failed to add TeamSpeak group {group_id} for {client_id} ({cldbid}): {e}")
-                    return {
-                        "ok": False,
-                        "error": "servergroup_add_failed",
-                        "cldbid": cldbid,
-                        "group_id": group_id,
-                        "details": str(e),
-                    }
-
-                logging.debug(f"Set server group {group_id} for user {client_id}")
-
+            if group_id in group_ids:
                 return {
                     "ok": True,
-                    "already_present": False,
+                    "already_present": True,
                     "cldbid": cldbid,
                     "group_id": group_id,
                 }
+
+            step = "servergroup_add"
+            try:
+                await self.client.server_group_add_client(sgid=group_id, cldbid=cldbid)
+            except Exception as e:
+                try:
+                    step = "servergroup_recheck"
+                    refreshed_groups = await self.client.server_groups_by_client(cldbid)
+                    refreshed_group_ids = [int(group.get("sgid", 0)) for group in refreshed_groups]
+                    if group_id in refreshed_group_ids:
+                        logging.info(
+                            f"TeamSpeak group {group_id} for {client_id} is present after add error; treating as success."
+                        )
+                        return {
+                            "ok": True,
+                            "already_present": True,
+                            "recovered_after_add_error": True,
+                            "cldbid": cldbid,
+                            "group_id": group_id,
+                            "details": str(e),
+                        }
+                except Exception as refresh_error:
+                    logging.error(
+                        f"Failed to re-check TeamSpeak groups after add error for {client_id} ({cldbid}): {refresh_error}"
+                    )
+                logging.error(f"Failed to add TeamSpeak group {group_id} for {client_id} ({cldbid}): {e}")
+                return {
+                    "ok": False,
+                    "error": "servergroup_add_failed",
+                    "cldbid": cldbid,
+                    "group_id": group_id,
+                    "details": str(e),
+                }
+
+            logging.debug(f"Set server group {group_id} for user {client_id}")
+
+            return {
+                "ok": True,
+                "already_present": False,
+                "cldbid": cldbid,
+                "group_id": group_id,
+            }
 
         except Exception as e:
             logging.error(f"Failed to set TeamSpeak group {group_id} for user {client_id} at {step}: {e}")
@@ -181,51 +173,45 @@ class RankManager:
                 "group_id": group_id,
                 "details": str(e),
             }
-        
-    def remove_server_group(self, client_id, group_id):
+
+    async def remove_server_group(self, client_id, group_id):
         """Remove a specific server group from a user"""
         try:
-            with self.connection_manager.connect() as ts3conn:
-                db_info = ts3conn.exec_("clientgetdbidfromuid", cluid=client_id)[0]
-                cldbid = db_info.get("cldbid")
-                
-                groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
-                group_ids = [int(group.get("sgid", 0)) for group in groups_info]
-                
-                if group_id not in group_ids:
-                    return True
-                
-                ts3conn.exec_("servergroupdelclient", sgid=group_id, cldbid=cldbid)
-                logging.debug(f"Removed server group {group_id} from user {client_id}")
-                
+            cldbid = await self.client.client_dbid_from_uid(client_id)
+
+            groups_info = await self.client.server_groups_by_client(cldbid)
+            group_ids = [int(group.get("sgid", 0)) for group in groups_info]
+
+            if group_id not in group_ids:
                 return True
-                
+
+            await self.client.server_group_del_client(sgid=group_id, cldbid=cldbid)
+            logging.debug(f"Removed server group {group_id} from user {client_id}")
+
+            return True
+
         except Exception as e:
             logging.error(f"Failed to remove server group for user {client_id}: {e}")
             return False
-    
 
-    def _update_server_group(self, ts3conn, cldbid, group_map, new_value, rank_type, client_id):
+
+    async def _update_server_group(self, cldbid, group_map, new_value, rank_type, client_id):
         """Update a specific server group type for a user"""
         try:
-            groups_info = ts3conn.exec_("servergroupsbyclientid", cldbid=cldbid)
-            
+            groups_info = await self.client.server_groups_by_client(cldbid)
+
             for group in groups_info:
                 group_id = int(group.get("sgid", 0))
                 if group_id in group_map.values():
-                    ts3conn.exec_("servergroupdelclient", 
-                                sgid=group_id, 
-                                cldbid=cldbid)
-            
+                    await self.client.server_group_del_client(sgid=group_id, cldbid=cldbid)
+
             if new_value in group_map:
                 new_group_id = group_map[new_value]
-                ts3conn.exec_("servergroupaddclient", 
-                            sgid=new_group_id, 
-                            cldbid=cldbid)
-                
+                await self.client.server_group_add_client(sgid=new_group_id, cldbid=cldbid)
+
                 logging.debug(f"Updated {rank_type} for user {client_id} to {new_value}")
             else:
                 logging.error(f"Invalid {rank_type} value: {new_value}")
-                
-        except ts3.query.TS3QueryError as err:
+
+        except atsq.QueryError as err:
             logging.error(f"TS3 Query Error updating {rank_type}: {err}")
