@@ -162,6 +162,10 @@ class Config:
             "port": cls.VALKEY_PORT,
             "db": cls.VALKEY_DB,
             "decode_responses": True,
+            # valkey.asyncio defaults socket_timeout to 5 (sync defaults to
+            # None), which kills blocking reads: XREADGROUP block=5000 and
+            # pubsub listen() die with "Timeout reading from ..." without this.
+            "socket_timeout": None,
         }
         if cls.VALKEY_USERNAME:
             kwargs["username"] = cls.VALKEY_USERNAME
