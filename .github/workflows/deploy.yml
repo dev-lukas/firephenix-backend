@@ -88,6 +88,7 @@ jobs:
     with:
       registry: registry.lukas-roth.dev
       registry_username: registry
+      source_image: local/firephenix-backend:${{ github.sha }}
       image_tags: |
         registry.lukas-roth.dev/firephenix-backend:${{ github.sha }}
         registry.lukas-roth.dev/firephenix-backend:latest
