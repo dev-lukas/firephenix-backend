@@ -1,4 +1,3 @@
-import time
 import asyncio
 import logging as python_logging
 import discord
@@ -73,7 +72,9 @@ class DiscordBot:
 
         return bot
 
-    def run(self):
+    async def run_async(self):
+        """Own the Discord session on the shared event loop, recreating the
+        client on disconnect (mirrors what bot.run() did in its own thread)."""
         reconnect_delay = self.BASE_RECONNECT_DELAY
         attempt = 0
         while self.running:
@@ -82,16 +83,17 @@ class DiscordBot:
             self.bot = self.create_bot()
             try:
                 logging.info(f"Starting Discord session attempt {attempt}.")
-                self.bot.run(self.token, log_handler=None)
+                async with self.bot:
+                    await self.bot.start(self.token)
                 reconnect_delay = self.BASE_RECONNECT_DELAY
+            except asyncio.CancelledError:
+                raise
             except discord.errors.ConnectionClosed:
                 logging.error("Connection to Discord lost.")
             except discord.errors.GatewayNotFound:
                 logging.error("Discord gateway not found.")
             except asyncio.TimeoutError:
                 logging.error("Discord connection timed out.")
-            except asyncio.CancelledError:
-                logging.error("Discord connection cancelled.")
             except Exception as e:
                 logging.error(f"Error running the bot: {e}")
             finally:
@@ -100,7 +102,7 @@ class DiscordBot:
 
             if self.running:
                 logging.info(f"Recreating Discord session in {reconnect_delay} seconds.")
-                time.sleep(reconnect_delay)
+                await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(self.MAX_RECONNECT_DELAY, reconnect_delay * 2)
 
     def get_online_users(self):
@@ -136,5 +138,8 @@ class DiscordBot:
         """Move a channel to a new location"""
         return await move_channel_apex(self.bot, channel_id)
 
-    def stop(self):
+    async def stop(self):
         self.running = False
+        bot = self.bot
+        if bot is not None and not bot.is_closed():
+            await bot.close()

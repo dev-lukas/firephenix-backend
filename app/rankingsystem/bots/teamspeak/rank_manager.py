@@ -19,13 +19,13 @@ class RankManager:
             cldbid = await self.client.client_dbid_from_uid(uid)
 
             try:
-                rank, division = self.db.get_user_roles(uid, "teamspeak")
+                rank, division = await self.db.get_user_roles(uid, "teamspeak")
             except DatabaseConnectionError:
                 logging.error("Database connection error in check_user_roles. Skipping.")
                 return
 
             if rank is None or division is None:
-                if self.db.has_time_entry(uid, "teamspeak"):
+                if await self.db.has_time_entry(uid, "teamspeak"):
                     logging.warning(f"User {uid} has no rank or division set in the database, but has time entries. Seems like the database failed to fetch. Skipping.")
                     return
                 else:

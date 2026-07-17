@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
+import asyncio
 import mariadb
 from app.config import Config
 from app.utils.logger import RankingLogger
-from app.utils.database import DatabaseManager
+from app.utils.async_database import AsyncDatabaseManager
 import datetime
 
 logging = RankingLogger(__name__).get_logger()
@@ -84,13 +85,12 @@ def recalculate_ranks():
             database=Config.DB_NAME,
         )
         cursor = conn.cursor()
-        db = DatabaseManager()
         for platform in ['discord', 'teamspeak']:
             cursor.execute(f"SELECT platform_uid FROM time WHERE platform = '{platform}'")
             users = cursor.fetchall()
-            for user_id in users:
-                db.update_ranks([user_id[0]], platform)
-                db.update_seasonal_ranks([user_id[0]], platform)
+            # rank updates live on the async manager now (one-off script: just
+            # drive the loop here)
+            asyncio.run(_recalculate_platform_ranks([u[0] for u in users], platform))
 
         conn.commit()
     except mariadb.Error as e:
@@ -101,6 +101,16 @@ def recalculate_ranks():
             cursor.close()
         if conn:
             conn.close()
+
+
+async def _recalculate_platform_ranks(user_ids, platform):
+    db = AsyncDatabaseManager()
+    try:
+        for user_id in user_ids:
+            await db.update_ranks([user_id], platform)
+            await db.update_seasonal_ranks([user_id], platform)
+    finally:
+        await db.close()
 
 if __name__ == '__main__':
     import_bak_user_data()

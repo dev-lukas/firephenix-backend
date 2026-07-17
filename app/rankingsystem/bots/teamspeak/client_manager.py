@@ -4,7 +4,7 @@ import requests
 from atsq import ClientType
 from app.utils.logger import RankingLogger
 from app.config import Config
-from app.utils.database import DatabaseManager
+from app.utils.async_database import get_async_db
 from app.rankingsystem.bots.teamspeak.rank_manager import RankManager
 
 logging = RankingLogger(__name__).get_logger()
@@ -19,6 +19,7 @@ class ClientManager:
         self.client_name_map = {}
         self.rank_manager = rank_manager
         self.client = client
+        self.db = get_async_db()
 
     async def handle_initial_clients(self):
         """Process existing clients after connection. This serves as a full rescan."""
@@ -58,7 +59,7 @@ class ClientManager:
                 self.client_name_map[uid] = name
                 logging.debug(f"Tracking initial client: {name} ({uid})")
 
-                self._capture_myteamspeak_identity(
+                await self._capture_myteamspeak_identity(
                     uid, client_info_full.get("client_myteamspeak_id"), is_ts6=self._is_ts6()
                 )
                 await self.check_vpn_and_kick_if_needed(client_info_full, client["clid"])
@@ -106,7 +107,7 @@ class ClientManager:
             # TS3->TS6 identity bridge: capture the stable myTeamSpeak account id (identical
             # across TS3/TS6) so returning users are recognised after the UID hash change.
             # Best-effort — never let it break connection handling.
-            self._capture_myteamspeak_identity(
+            await self._capture_myteamspeak_identity(
                 uid, client_info.get("client_myteamspeak_id"), is_ts6=self._is_ts6()
             )
 
@@ -138,25 +139,25 @@ class ClientManager:
         except Exception:
             return False
 
-    def _capture_myteamspeak_identity(self, uid, myteamspeak_id, is_ts6=False):
+    async def _capture_myteamspeak_identity(self, uid, myteamspeak_id, is_ts6=False):
         """Persist the connecting client's myTeamSpeak account id and, if it maps to a
         prior TS identity under a different UID, bridge them (seamless recognition).
         Best-effort: any failure is logged and swallowed so connect handling continues."""
         if not myteamspeak_id:
             return
-        db = None
         try:
-            db = DatabaseManager()
-            result = db.recognize_teamspeak_client(uid, myteamspeak_id, is_ts6=is_ts6)
+            result = await self.db.recognize_teamspeak_client(uid, myteamspeak_id, is_ts6=is_ts6)
             if result.get("merged"):
                 logging.info(
                     f"Bridged TS identity via myTeamSpeak id: absorbed {result.get('absorbed_uid')} "
                     f"into {result.get('canonical_uid')}")
         except Exception as e:
             logging.error(f"myTeamSpeak identity capture failed for uid {uid}: {e}")
-        finally:
-            if db:
-                db.close()
+
+    async def _get_user_level(self, teamspeak_id):
+        result = await self.db.execute_query(
+            "SELECT level FROM user WHERE teamspeak_id = %s", (teamspeak_id,))
+        return result[0][0] if result else 0
 
     async def check_vpn_and_kick_if_needed(self, client_info, clid):
         """Check if the user's IP is VPN/Tor and kick if level is too low."""
@@ -166,10 +167,7 @@ class ClientManager:
                 logging.warning(f"No IP found for client {clid} ({client_info.get('client_nickname')}) during VPN check.")
                 return
 
-            db = DatabaseManager()
-            result = db.execute_query("SELECT level FROM user WHERE teamspeak_id = ?", (client_info["client_unique_identifier"],))
-            db.close()
-            level = result[0][0] if result else 0
+            level = await self._get_user_level(client_info["client_unique_identifier"])
             if level < 9:
                 # requests is blocking; keep it off the event loop
                 resp = await asyncio.to_thread(

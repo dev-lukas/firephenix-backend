@@ -2,7 +2,8 @@ import asyncio
 import re
 import discord
 from discord.ext import commands, tasks
-from app.utils.database import DatabaseManager, DatabaseConnectionError
+from app.utils.database import DatabaseConnectionError
+from app.utils.async_database import get_async_db
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.rankingsystem.bots.discord.utils import set_ranks
@@ -39,7 +40,7 @@ class ClientManager(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.guild = self.bot.get_guild(Config.DISCORD_GUILD_ID)
-        self.database = DatabaseManager()
+        self.database = get_async_db()
         self.excluded_role_id = int(Config.DISCORD_EXCLUDED_ROLE_ID)
         self.connected_users = set()
         self.user_name_map = {}
@@ -100,15 +101,15 @@ class ClientManager(commands.Cog):
             return None
 
         try:
-            rank, division = self.database.get_user_roles(user_id, "discord")
+            rank, division = await self.database.get_user_roles(user_id, "discord")
         except DatabaseConnectionError:
             logging.error(
                 "Database connection error on check_user_roles - aborting checking user roles"
             )
             return None
-        
+
         if rank is None or division is None:
-            if self.database.has_time_entry(user_id, "discord"):
+            if await self.database.has_time_entry(user_id, "discord"):
                 logging.warning(f"User {user_id} has no rank or division set in the database, but has time entries. Seems like the database failed to fetch. Skipping.")
                 return None
             else:

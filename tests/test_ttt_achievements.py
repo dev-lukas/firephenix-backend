@@ -1,3 +1,4 @@
+import asyncio
 import json
 import unittest
 from datetime import datetime
@@ -7,6 +8,7 @@ from flask import Flask
 from app.api.ranking.profile.achievements import routes as achievement_routes
 from app.api.ranking.top import routes as top_routes
 from app.api.user import routes as user_routes
+from app.utils.async_database import AsyncDatabaseManager
 from app.utils.database import DatabaseManager, zero_ttt_player_stats
 from app.utils.ttt_achievement_consumer import TttAchievementStreamConsumer
 
@@ -58,20 +60,25 @@ class FakeCursor:
 
 class DatabaseTttIngestTests(unittest.TestCase):
     def make_db(self):
-        db = object.__new__(DatabaseManager)
-        db.conn = FakeConn()
-        db.cursor = FakeCursor()
+        db = AsyncDatabaseManager()
+        db.executed = []
+
+        async def fake_execute(query, params=None):
+            db.executed.append((query, params))
+            return None
+
+        db.execute_query = fake_execute
         return db
 
     def test_ingest_ttt_achievement_event_updates_stats(self):
         db = self.make_db()
 
-        result = db.ingest_ttt_achievement_event(valid_ttt_event(base_role=2, kills=4))
+        result = asyncio.run(db.ingest_ttt_achievement_event(valid_ttt_event(base_role=2, kills=4)))
 
         self.assertEqual(result, {"ok": True, "event_id": "round1_76561198000000000"})
-        self.assertEqual(len(db.cursor.executed), 1)
-        self.assertNotIn("ttt_round_stat_events", db.cursor.executed[0][0])
-        stats_params = db.cursor.executed[0][1]
+        self.assertEqual(len(db.executed), 1)
+        self.assertNotIn("ttt_round_stat_events", db.executed[0][0])
+        stats_params = db.executed[0][1]
         self.assertEqual(stats_params[0], "76561198000000000")
         self.assertEqual(stats_params[2], 1)
         self.assertEqual(stats_params[3], 1)
@@ -80,7 +87,6 @@ class DatabaseTttIngestTests(unittest.TestCase):
         self.assertEqual(stats_params[6], 0)
         self.assertEqual(stats_params[7], 4)
         self.assertIsInstance(stats_params[9], datetime)
-        self.assertEqual(db.conn.commits, 1)
 
 
 class FakeStreamValkey:
@@ -89,12 +95,12 @@ class FakeStreamValkey:
         self.deletes = []
         self.order = order
 
-    def xack(self, stream, group, message_id):
+    async def xack(self, stream, group, message_id):
         if self.order is not None:
             self.order.append("ack")
         self.acks.append((stream, group, message_id))
 
-    def xdel(self, stream, message_id):
+    async def xdel(self, stream, message_id):
         if self.order is not None:
             self.order.append("delete")
         self.deletes.append((stream, message_id))
@@ -105,17 +111,17 @@ class StreamConsumerTests(unittest.TestCase):
         order = []
 
         class FakeDb:
-            def ingest_ttt_achievement_event(self, payload):
+            async def ingest_ttt_achievement_event(self, payload):
                 order.append("ingest")
 
         valkey_client = FakeStreamValkey(order)
         consumer = TttAchievementStreamConsumer(valkey_client, FakeDb())
 
-        handled = consumer.handle_message(
+        handled = asyncio.run(consumer.handle_message(
             "gameserver:ttt:achievement_events",
             "1-0",
             {"payload": json.dumps(valid_ttt_event())},
-        )
+        ))
 
         self.assertTrue(handled)
         self.assertEqual(order, ["ingest", "ack", "delete"])
@@ -124,17 +130,17 @@ class StreamConsumerTests(unittest.TestCase):
 
     def test_malformed_stream_event_is_acknowledged_and_deleted_without_ingest(self):
         class FakeDb:
-            def ingest_ttt_achievement_event(self, payload):
+            async def ingest_ttt_achievement_event(self, payload):
                 raise AssertionError("malformed events must not be ingested")
 
         valkey_client = FakeStreamValkey()
         consumer = TttAchievementStreamConsumer(valkey_client, FakeDb())
 
-        handled = consumer.handle_message(
+        handled = asyncio.run(consumer.handle_message(
             "gameserver:ttt:achievement_events",
             "1-1",
             {"payload": "{not json"},
-        )
+        ))
 
         self.assertFalse(handled)
         self.assertEqual(valkey_client.acks, [("gameserver:ttt:achievement_events", "firephenix-backend", "1-1")])
@@ -142,17 +148,17 @@ class StreamConsumerTests(unittest.TestCase):
 
     def test_database_failure_leaves_stream_event_unacked(self):
         class FakeDb:
-            def ingest_ttt_achievement_event(self, payload):
+            async def ingest_ttt_achievement_event(self, payload):
                 raise RuntimeError("database down")
 
         valkey_client = FakeStreamValkey()
         consumer = TttAchievementStreamConsumer(valkey_client, FakeDb())
 
-        handled = consumer.handle_message(
+        handled = asyncio.run(consumer.handle_message(
             "gameserver:ttt:achievement_events",
             "1-2",
             {"payload": json.dumps(valid_ttt_event())},
-        )
+        ))
 
         self.assertFalse(handled)
         self.assertEqual(valkey_client.acks, [])
