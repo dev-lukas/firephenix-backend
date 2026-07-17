@@ -35,7 +35,7 @@ jobs:
   checks:
     uses: dev-lukas/ci-cd-actions/.github/workflows/python-checks.yml@main
     with:
-      python_version: "3.12"
+      python_version: "3.13"
       check_commands: |
         python3 -m compileall app run.py bot_runner.py legacy_database_import.py tests
 

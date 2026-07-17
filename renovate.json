@@ -4,5 +4,15 @@
     "config:recommended",
     ":dependencyDashboard"
   ],
-  "timezone": "Europe/Berlin"
+  "timezone": "Europe/Berlin",
+  "packageRules": [
+    {
+      "description": "Hold Python at 3.13 until asyncmy and libvalkey publish cp314 wheels (else the C-toolchain-free image can't build)",
+      "matchPackageNames": [
+        "python",
+        "docker.io/library/python"
+      ],
+      "allowedVersions": "<3.14"
+    }
+  ]
 }
