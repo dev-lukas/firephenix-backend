@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import atsq
 import requests
 from atsq import ClientType
@@ -167,11 +168,23 @@ class ClientManager:
                 logging.warning(f"No IP found for client {clid} ({client_info.get('client_nickname')}) during VPN check.")
                 return
 
+            # IPv6 clients reach us directly since the edge network went dual-stack;
+            # accept bracketed forms and drop any %zone suffix before validating.
+            try:
+                address = ipaddress.ip_address(ip.strip("[]").split("%", 1)[0])
+            except ValueError:
+                logging.warning(f"Unparseable IP {ip!r} for client {clid} during VPN check.")
+                return
+            if not address.is_global:
+                # Docker-internal or otherwise non-public source; vpnapi.io cannot rate it.
+                logging.debug(f"Skipping VPN check for non-global IP {address} (clid {clid}).")
+                return
+
             level = await self._get_user_level(client_info["client_unique_identifier"])
             if level < 9:
                 # requests is blocking; keep it off the event loop
                 resp = await asyncio.to_thread(
-                    requests.get, f"https://vpnapi.io/api/{ip}?key={Config.VPNAPI_API_KEY}", timeout=5
+                    requests.get, f"https://vpnapi.io/api/{address}?key={Config.VPNAPI_API_KEY}", timeout=5
                 )
                 if resp.status_code != 200:
                     logging.warning(f"vpnapi.io error: {resp.status_code}")
