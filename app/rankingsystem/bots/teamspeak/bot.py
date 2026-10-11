@@ -5,6 +5,7 @@ from app.utils.async_database import get_async_db
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.rankingsystem.bots.teamspeak.client_manager import ClientManager
+from app.rankingsystem.bots.teamspeak.identity import IdentityResolver
 from app.rankingsystem.bots.teamspeak.rank_manager import RankManager
 from app.rankingsystem.bots.teamspeak.channel_manager import ChannelManager
 
@@ -42,9 +43,10 @@ class TeamspeakBot:
             server_id=int(Config.TS3_SERVER_ID),
             register_events="server",
         )
-        self.rank_manager = RankManager(Config, self.database, self.client)
-        self.client_manager = ClientManager(Config, self.rank_manager, self.client)
-        self.channel_manager = ChannelManager(Config, self.client)
+        self.identity = IdentityResolver(self.client, self.database)
+        self.rank_manager = RankManager(Config, self.database, self.client, self.identity)
+        self.client_manager = ClientManager(Config, self.rank_manager, self.client, self.identity)
+        self.channel_manager = ChannelManager(Config, self.client, self.identity)
         self._validation_task = None
         self._register_event_handlers()
 

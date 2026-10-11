@@ -702,13 +702,45 @@ class AsyncDatabaseManager:
 
         return await self._run(op)
 
+    async def record_teamspeak6_alias(self, canonical_uid: Union[str, int],
+                                      native_uid: Union[str, int]) -> bool:
+        """Store the native TS6 UID on the row keyed by ``canonical_uid`` (moving
+        it off any other row), so lookups by either UID find the same user.
+        No-op until that row exists. Returns True if a row was updated."""
+        canonical_uid, native_uid = str(canonical_uid), str(native_uid)
+
+        async def op(conn):
+            await conn.begin()
+            try:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "UPDATE user SET teamspeak6_id = NULL "
+                        "WHERE teamspeak6_id = %s AND (teamspeak_id IS NULL OR teamspeak_id <> %s)",
+                        (native_uid, canonical_uid))
+                    await cur.execute(
+                        "UPDATE user SET teamspeak6_id = %s "
+                        "WHERE teamspeak_id = %s AND (teamspeak6_id IS NULL OR teamspeak6_id <> %s)",
+                        (native_uid, canonical_uid, native_uid))
+                    updated = cur.rowcount > 0
+                await conn.commit()
+                return updated
+            except Exception:
+                await conn.rollback()
+                raise
+
+        return await self._run(op)
+
     async def recognize_teamspeak_client(self, connecting_uid: Union[str, int],
-                                         myteamspeak_id: Optional[str], is_ts6: bool = False) -> dict:
-        """Called on every TS connect. Captures the myTeamSpeak id, and if that
-        account has a prior TS identity under a *different* UID, bridges them:
-        records the new UID (into teamspeak6_id on TS6) and merges history so the
-        user is recognised seamlessly. Returns a summary of what happened."""
+                                         myteamspeak_id: Optional[str],
+                                         native_uid: Optional[str] = None) -> dict:
+        """Called on every TS connect with the client's canonical UID (on TS6 the
+        TS3 UID derived from its public key) and, on TS6, its native UID.
+        Records the native UID as alias, captures the myTeamSpeak id, and if that
+        account has a prior TS identity under a *different* UID (the user made a
+        new identity), merges history into it. Returns a summary."""
         connecting_uid = str(connecting_uid)
+        if native_uid and str(native_uid) != connecting_uid:
+            await self.record_teamspeak6_alias(connecting_uid, native_uid)
         await self.capture_myteamspeak_id(connecting_uid, myteamspeak_id)
         prior = await self.find_user_by_myteamspeak_id(myteamspeak_id, exclude_uid=connecting_uid)
         if not prior:
@@ -716,11 +748,8 @@ class AsyncDatabaseManager:
         pid, prior_ts3, prior_ts6 = prior
         canonical_uid = prior_ts3 or prior_ts6
         result = await self.merge_teamspeak_identity(canonical_uid, connecting_uid)
-        if is_ts6 and result.get("merged"):
-            # Record the new SHA-256 UID as an alias on the historical row.
-            await self.execute_query(
-                "UPDATE user SET teamspeak6_id = %s WHERE id = %s AND (teamspeak6_id IS NULL OR teamspeak6_id <> %s)",
-                (connecting_uid, pid, connecting_uid))
+        if native_uid and result.get("merged"):
+            await self.record_teamspeak6_alias(canonical_uid, native_uid)
         result["recognized"] = result.get("merged", False)
         result["canonical_uid"] = canonical_uid
         return result

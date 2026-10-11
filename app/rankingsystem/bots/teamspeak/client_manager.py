@@ -6,6 +6,7 @@ from atsq import ClientType
 from app.utils.logger import RankingLogger
 from app.config import Config
 from app.utils.async_database import get_async_db
+from app.rankingsystem.bots.teamspeak.identity import IdentityResolver
 from app.rankingsystem.bots.teamspeak.rank_manager import RankManager
 
 logging = RankingLogger(__name__).get_logger()
@@ -13,7 +14,8 @@ logging = RankingLogger(__name__).get_logger()
 class ClientManager:
     """Manages TeamSpeak client information and tracking"""
 
-    def __init__(self, config, rank_manager: RankManager, client: atsq.Client):
+    def __init__(self, config, rank_manager: RankManager, client: atsq.Client,
+                 identity: IdentityResolver = None):
         self.excluded_role_id = int(config.TS3_EXCLUDED_ROLE_ID)
         self.connected_users = set()
         self.client_uid_map = {}
@@ -21,6 +23,7 @@ class ClientManager:
         self.rank_manager = rank_manager
         self.client = client
         self.db = get_async_db()
+        self.identity = identity or IdentityResolver(client, self.db)
 
     async def handle_initial_clients(self):
         """Process existing clients after connection. This serves as a full rescan."""
@@ -48,21 +51,19 @@ class ClientManager:
                     logging.warning(f"Could not get group info for cldbid {cldbid} (client: {client.get('client_nickname')}): {group_error}. Skipping client.")
                     continue
 
-                uid = client_info_full.get("client_unique_identifier")
+                uid = await self.identity.resolve(client_info_full)
                 name = client_info_full.get("client_nickname")
 
                 if not uid or not name:
                     logging.warning(f"Client with clid {client['clid']} has no UID or Name. Skipping.")
                     continue
 
+                uid = await self._capture_myteamspeak_identity(uid, client_info_full)
                 self.connected_users.add(uid)
                 self.client_uid_map[client["clid"]] = uid
                 self.client_name_map[uid] = name
                 logging.debug(f"Tracking initial client: {name} ({uid})")
 
-                await self._capture_myteamspeak_identity(
-                    uid, client_info_full.get("client_myteamspeak_id"), is_ts6=self._is_ts6()
-                )
                 await self.check_vpn_and_kick_if_needed(client_info_full, client["clid"])
 
             logging.info(f"Initial client scan complete. Tracking {len(self.connected_users)} users.")
@@ -76,7 +77,7 @@ class ClientManager:
         try:
             client_info = await self.client.client_info(client_id)
             return (
-                client_info["client_unique_identifier"],
+                await self.identity.resolve(client_info),
                 client_info["client_nickname"]
             )
         except atsq.QueryError as err:
@@ -98,19 +99,16 @@ class ClientManager:
         try:
             client_info = await self.client.client_info(clid)
             cldbid = client_info.get("client_database_id")
-            uid = client_info.get("client_unique_identifier")
+            uid = await self.identity.resolve(client_info)
             name = client_info.get("client_nickname")
 
             if not cldbid or not uid or not name:
                 logging.warning(f"Could not get full info for connecting clid {clid}. UID: {uid}, Name: {name}. Skipping.")
                 return None
 
-            # TS3->TS6 identity bridge: capture the stable myTeamSpeak account id (identical
-            # across TS3/TS6) so returning users are recognised after the UID hash change.
-            # Best-effort — never let it break connection handling.
-            await self._capture_myteamspeak_identity(
-                uid, client_info.get("client_myteamspeak_id"), is_ts6=self._is_ts6()
-            )
+            # Record the TS6 alias and myTeamSpeak id; may re-key a new identity onto its
+            # historical row. Best-effort — never let it break connection handling.
+            uid = await self._capture_myteamspeak_identity(uid, client_info)
 
             groups_info = await self.client.server_groups_by_client(cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
@@ -133,27 +131,28 @@ class ClientManager:
             logging.error(f"Unexpected error in handle_client_connect for clid {clid}: {ex}")
             return None
 
-    def _is_ts6(self):
-        """Whether the connected server is TS6-generation (atsq sniffs it at connect)."""
+    async def _capture_myteamspeak_identity(self, uid, client_info):
+        """Persist the TS6 alias + myTeamSpeak account id for a connecting client and,
+        if that account owns an older identity, merge into it. Returns the canonical
+        UID to track (changed only by a merge). Failures are logged and swallowed."""
+        native_uid = client_info.get("client_unique_identifier")
+        myteamspeak_id = client_info.get("client_myteamspeak_id")
+        native_alias = native_uid if native_uid and native_uid != uid else None
+        if not myteamspeak_id and not native_alias:
+            return uid
         try:
-            return self.client.dialect == atsq.Dialect.TS6
-        except Exception:
-            return False
-
-    async def _capture_myteamspeak_identity(self, uid, myteamspeak_id, is_ts6=False):
-        """Persist the connecting client's myTeamSpeak account id and, if it maps to a
-        prior TS identity under a different UID, bridge them (seamless recognition).
-        Best-effort: any failure is logged and swallowed so connect handling continues."""
-        if not myteamspeak_id:
-            return
-        try:
-            result = await self.db.recognize_teamspeak_client(uid, myteamspeak_id, is_ts6=is_ts6)
+            result = await self.db.recognize_teamspeak_client(uid, myteamspeak_id, native_uid=native_alias)
             if result.get("merged"):
                 logging.info(
                     f"Bridged TS identity via myTeamSpeak id: absorbed {result.get('absorbed_uid')} "
                     f"into {result.get('canonical_uid')}")
+                # TS3 has no alias to map back for server lookups, so it keeps the native UID.
+                if self.identity.is_ts6() and native_uid:
+                    uid = result["canonical_uid"]
+                    self.identity.remember(uid, native_uid)
         except Exception as e:
             logging.error(f"myTeamSpeak identity capture failed for uid {uid}: {e}")
+        return uid
 
     async def _get_user_level(self, teamspeak_id):
         result = await self.db.execute_query(
@@ -180,7 +179,7 @@ class ClientManager:
                 logging.debug(f"Skipping VPN check for non-global IP {address} (clid {clid}).")
                 return
 
-            level = await self._get_user_level(client_info["client_unique_identifier"])
+            level = await self._get_user_level(await self.identity.resolve(client_info))
             if level < 9:
                 # requests is blocking; keep it off the event loop
                 resp = await asyncio.to_thread(
@@ -246,7 +245,7 @@ class ClientManager:
 
                 try:
                     client_info = await self.client.client_info(client["clid"])
-                    uid = client_info.get("client_unique_identifier")
+                    uid = await self.identity.resolve(client_info)
                     cldbid = client_info.get("client_database_id")
 
                     if not uid or not cldbid:
