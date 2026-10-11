@@ -9,9 +9,15 @@ logging = RankingLogger(__name__).get_logger()
 class ChannelManager:
     """Manages TeamSpeak channel operations"""
 
-    def __init__(self, config, client: atsq.Client):
+    def __init__(self, config, client: atsq.Client, identity=None):
         self.config = config
         self.client = client
+        self.identity = identity
+
+    async def _cldbid(self, uid):
+        """Database id for a canonical UID; on TS6 looked up via the native UID."""
+        native = await self.identity.native_uid(uid) if self.identity else uid
+        return await self.client.client_dbid_from_uid(native)
 
     async def create_owned_channel(self, user_id, channel_name):
         """Creates a new owned channel for the user"""
@@ -23,7 +29,7 @@ class ChannelManager:
                 channel_codec=4,
                 channel_codec_quality=10
             )
-            cldbid = await self.client.client_dbid_from_uid(user_id)
+            cldbid = await self._cldbid(user_id)
 
             await self.client.set_client_channel_group(
                 cgid=self.config.TS3_OWNER_GROUP_ID,
@@ -92,7 +98,7 @@ class ChannelManager:
     async def send_verification(self, user_id, code):
         """Send verification code to TeamSpeak user"""
         try:
-            cldbid = await self.client.client_dbid_from_uid(user_id)
+            cldbid = await self._cldbid(user_id)
 
             clients = await self.client.client_list()
             for client in clients:

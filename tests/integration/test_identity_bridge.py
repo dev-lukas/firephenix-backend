@@ -100,7 +100,7 @@ class IdentityBridgeTests(unittest.TestCase):
         seed_time(self.db, platform="teamspeak", platform_uid="NEW-UID",
                   total_time=5, season_time=5)
 
-        result = self._bridge("recognize_teamspeak_client", "NEW-UID", "MYTSID-CAROL", is_ts6=False)
+        result = self._bridge("recognize_teamspeak_client", "NEW-UID", "MYTSID-CAROL")
 
         self.assertTrue(result["recognized"])
         self.assertEqual(result["canonical_uid"], "OLD-UID")
@@ -113,21 +113,46 @@ class IdentityBridgeTests(unittest.TestCase):
         self.assertEqual(self._time_total("OLD-UID"), 1005)
         self.assertIsNone(self._time_total("NEW-UID"))
 
-    def test_recognize_ts6_records_alias_and_keeps_ts3_id(self):
+    def test_recognize_ts6_new_identity_merges_and_records_alias(self):
+        # Dave made a new identity for TS6; myTeamSpeak links it to his history.
         old_id = seed_user(self.db, teamspeak_id="TS3-SHA1", name="Dave", level=5)
         self._bridge("capture_myteamspeak_id", "TS3-SHA1", "MYTSID-DAVE")
         seed_time(self.db, platform="teamspeak", platform_uid="TS3-SHA1", total_time=500)
 
-        result = self._bridge("recognize_teamspeak_client", "TS6-SHA256", "MYTSID-DAVE", is_ts6=True)
+        result = self._bridge("recognize_teamspeak_client", "NEWKEY-SHA1", "MYTSID-DAVE",
+                              native_uid="TS6-SHA256")
 
         self.assertEqual(result["canonical_uid"], "TS3-SHA1")
         ts3, ts6, mytsid, _ = self._user_row(old_id)
         self.assertEqual(ts3, "TS3-SHA1")       # canonical TS3 id preserved
-        self.assertEqual(ts6, "TS6-SHA256")     # new SHA-256 recorded as alias
+        self.assertEqual(ts6, "TS6-SHA256")     # native TS6 UID recorded as alias
+
+    def test_recognize_ts6_records_alias_without_myteamspeak(self):
+        user_id = seed_user(self.db, teamspeak_id="TS3-SHA1", name="Hank")
+
+        result = self._bridge("recognize_teamspeak_client", "TS3-SHA1", None,
+                              native_uid="TS6-SHA256")
+
+        self.assertFalse(result["recognized"])
+        self.assertEqual(self._user_row(user_id)[1], "TS6-SHA256")
+
+    def test_alias_moves_off_previous_row(self):
+        first = seed_user(self.db, teamspeak_id="A-SHA1", name="Ivy")
+        second = seed_user(self.db, teamspeak_id="B-SHA1", name="Ivy2")
+        self._bridge("record_teamspeak6_alias", "A-SHA1", "TS6-X")
+
+        updated = self._bridge("record_teamspeak6_alias", "B-SHA1", "TS6-X")
+
+        self.assertTrue(updated)
+        self.assertIsNone(self._user_row(first)[1])
+        self.assertEqual(self._user_row(second)[1], "TS6-X")
+
+    def test_alias_noop_without_row(self):
+        self.assertFalse(self._bridge("record_teamspeak6_alias", "UNKNOWN", "TS6-Y"))
 
     def test_recognize_noop_for_unknown_account(self):
         seed_user(self.db, teamspeak_id="SOLO", name="Eve")
-        result = self._bridge("recognize_teamspeak_client", "SOLO", "MYTSID-EVE", is_ts6=False)
+        result = self._bridge("recognize_teamspeak_client", "SOLO", "MYTSID-EVE")
         self.assertFalse(result["recognized"])
 
     # --- safety guard --------------------------------------------------- #

@@ -7,16 +7,22 @@ logging = RankingLogger(__name__).get_logger()
 class RankManager:
     """Manages TeamSpeak user ranks and server groups"""
 
-    def __init__(self, config, db_manager, client: atsq.Client):
+    def __init__(self, config, db_manager, client: atsq.Client, identity=None):
         self.config = config
         self.db = db_manager
         self.client = client
+        self.identity = identity
+
+    async def _cldbid(self, uid):
+        """Database id for a canonical UID; on TS6 looked up via the native UID."""
+        native = await self.identity.native_uid(uid) if self.identity else uid
+        return await self.client.client_dbid_from_uid(native)
 
     async def check_user_roles(self, uid):
         """Check if user rank needs to be updated"""
         try:
             logging.debug(f"Checking rank for user: {uid}")
-            cldbid = await self.client.client_dbid_from_uid(uid)
+            cldbid = await self._cldbid(uid)
 
             try:
                 rank, division = await self.db.get_user_roles(uid, "teamspeak")
@@ -75,7 +81,7 @@ class RankManager:
             return None
 
         try:
-            cldbid = await self.client.client_dbid_from_uid(client_id)
+            cldbid = await self._cldbid(client_id)
 
             if level is not None:
                 await self._update_server_group(
@@ -106,7 +112,7 @@ class RankManager:
         cldbid = None
         step = "client_lookup"
         try:
-            cldbid = await self.client.client_dbid_from_uid(client_id)
+            cldbid = await self._cldbid(client_id)
             if not cldbid:
                 return {"ok": False, "error": "client_dbid_missing"}
 
@@ -177,7 +183,7 @@ class RankManager:
     async def remove_server_group(self, client_id, group_id):
         """Remove a specific server group from a user"""
         try:
-            cldbid = await self.client.client_dbid_from_uid(client_id)
+            cldbid = await self._cldbid(client_id)
 
             groups_info = await self.client.server_groups_by_client(cldbid)
             group_ids = [int(group.get("sgid", 0)) for group in groups_info]
