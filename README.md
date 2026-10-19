@@ -127,3 +127,9 @@ scripts/run-integration-tests.sh              # + real MariaDB/Valkey (docker)
 Integration tests live in `tests/integration/` and are skipped unless
 `RUN_INTEGRATION_TESTS=1` is set. CI additionally smoke-tests the built image
 against a real TeamSpeak server (`.github/ci/bot-teamspeak-smoke.sh`).
+
+## License
+
+[AGPL-3.0](LICENSE). If you run a modified version of this backend for others,
+you must make its source available to them. The FirePhenix name and logo are not
+covered by the license.
